@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>ניהול מאגר</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&family=Secular+One&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>ניהול</h1>
+    <nav class="nav">
+      <a href="/">איתור</a>
+      <a href="/purchases">רשימת רכישות</a>
+      <a href="/admin">ניהול</a>
+      <button id="logout" type="button">יציאה</button>
+    </nav>
+  </header>
+
+  <section class="card">
+    <h2 style="margin:0;font-size:1.15rem">קובץ הסטודנטים</h2>
+    <p id="info" class="muted" style="margin:0">טוען…</p>
+    <div class="drop" id="drop">
+      <strong>גררו לכאן את קובץ האקסל</strong>
+      <span class="muted">קובץ אקסל (xlsx / xls / csv), השורה הראשונה כותרות, ואחת העמודות היא מספר זהות (מ"ז / ת.ז)</span>
+      <label class="btn primary" for="file">בחירת קובץ</label>
+      <input type="file" id="file" accept=".xlsx,.xls,.csv" hidden>
+    </div>
+    <p class="muted" style="margin:0">העלאה של קובץ חדש מחליפה את רשימת הסטודנטים. רכישות שכבר נרשמו נשמרות.</p>
+  </section>
+
+  <section class="card">
+    <h2 style="margin:0;font-size:1.15rem">גיבוי הרכישות</h2>
+    <p class="muted" style="margin:0">קובץ אקסל עם כל הרכישות, פרטי הסטודנטים ויומן של כל שינוי.</p>
+    <div><button class="btn primary" id="exportBtn" type="button">הורדה לאקסל</button></div>
+  </section>
+</div>
+<div class="toast" id="toast" hidden></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="/static/common.js"></script>
+<script src="/static/excel.js"></script>
+<script>
+function showInfo(me) {
+  const u = me.upload;
+  $('#info').innerHTML = me.students
+    ? `במאגר <b>${me.students.toLocaleString('he-IL')}</b> סטודנטים${u ? ` · מהקובץ <b>${esc(u.file)}</b> · הועלה ${fmtTime(u.at)}` : ''}`
+    : 'עדיין לא הועלה קובץ.';
+}
+document.addEventListener('me', e => showInfo(e.detail));
+async function send(file) {
+  $('#info').textContent = 'קורא את הקובץ ומעלה…';
+  try {
+    const data = await readStudentsFile(file);
+    const r = await api('/api/upload', { method: 'POST', body: JSON.stringify(data) });
+    let m = `נטענו ${r.count.toLocaleString('he-IL')} סטודנטים (עמודת הזיהוי: ${r.idHeader})`;
+    if (r.dups) m += ` · ${r.dups} שורות כפולות דולגו`;
+    if (r.noId) m += ` · ${r.noId} שורות בלי מספר זהות דולגו`;
+    toast(m);
+    showInfo(await api('/api/me'));
+  } catch (e) { toast(e.message); showInfo(await api('/api/me')); }
+}
+const drop = $('#drop');
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files[0]) send(e.dataTransfer.files[0]); });
+$('#exportBtn').addEventListener('click', () => downloadPurchasesXlsx().catch(e => toast(e.message)));
+$('#file').addEventListener('change', e => { if (e.target.files[0]) send(e.target.files[0]); e.target.value = ''; });
+</script>
+</body>
+</html>

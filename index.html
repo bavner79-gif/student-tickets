@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>איתור סטודנט</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&family=Secular+One&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>איתור סטודנט</h1>
+    <nav class="nav">
+      <a href="/">איתור</a>
+      <a href="/purchases">רשימת רכישות</a>
+      <a href="/admin" data-admin hidden>ניהול</a>
+      <button id="logout" type="button">יציאה</button>
+    </nav>
+  </header>
+
+  <div id="noList" class="banner warn" hidden>עדיין לא הועלה קובץ סטודנטים. מנהל צריך להעלות אותו בעמוד "ניהול".</div>
+
+  <form class="scan" id="scanForm" autocomplete="off">
+    <label for="scan">סריקת ברקוד או הקלדת מספר זהות</label>
+    <input id="scan" inputmode="numeric" placeholder="מספר זהות" autofocus>
+    <button class="btn primary big" type="submit">חיפוש</button>
+    <div class="hint">סורק הברקוד מקליד את המספר ולוחץ Enter לבד. בהקלדה ידנית לוחצים <kbd>Enter</kbd>. <kbd>Esc</kbd> מנקה את המסך.</div>
+  </form>
+
+  <div id="saved" class="banner ok" hidden></div>
+  <section id="result"><div class="idle"><strong>ממתין לסריקה</strong>סרקו את הברקוד שעל תעודת הסטודנט או הקלידו מספר זהות</div></section>
+</div>
+<div class="toast" id="toast" hidden></div>
+<script src="/static/common.js"></script>
+<script>
+let current = null;
+const IDLE = '<div class="idle"><strong>ממתין לסריקה</strong>סרקו את הברקוד שעל תעודת הסטודנט או הקלידו מספר זהות</div>';
+
+document.addEventListener('me', e => { $('#noList').hidden = e.detail.students > 0; });
+
+function reset(keepSaved) {
+  current = null; $('#result').innerHTML = IDLE; $('#scan').value = ''; $('#scan').focus();
+  if (!keepSaved) $('#saved').hidden = true;
+}
+
+async function lookup(raw) {
+  const id = String(raw).replace(/\D/g, '');
+  if (!id) return;
+  $('#saved').hidden = true;
+  $('#result').innerHTML = '<div class="idle"><strong>מחפש…</strong></div>';
+  try {
+    const { student, purchase } = await api('/api/student/' + encodeURIComponent(id));
+    current = { student, purchase };
+    render();
+  } catch (e) {
+    if (e.status === 404) {
+      $('#result').innerHTML = `<div class="card">
+        <div class="verdict v-bad"><div class="mark" aria-hidden="true">✕</div><div><h2>לא נמצא במאגר</h2><p>מספר זהות <span class="mono">${esc(id)}</span> לא מופיע ברשימת הסטודנטים</p></div></div>
+        <p class="muted" style="margin:0">בדקו שהמספר הוקלד נכון ונסו שוב. אם הסטודנט מציג אישור תקף – פנו לאחראי המשמרת.</p></div>`;
+    } else { $('#result').innerHTML = IDLE; toast(e.message); }
+  }
+  $('#scan').select();
+}
+
+function render() {
+  const { student: s, purchase: p } = current;
+  const verdict = p
+    ? `<div class="verdict v-warn"><div class="mark" aria-hidden="true">!</div><div><h2>כבר רכש ${p.tickets} כרטיסים</h2><p>חשבונית <span class="mono">${esc(p.invoice)}</span> · ${fmtTime(p.updatedAt)}${p.station ? ' · ' + esc(p.station) : ''}</p></div></div>`
+    : `<div class="verdict v-ok"><div class="mark" aria-hidden="true">✓</div><div><h2>נמצא במאגר</h2><p>אמתו את הפרטים מול התעודה</p></div></div>`;
+  const fields = s.fields.filter(([, v]) => v).map(([h, v]) =>
+    `<div><span>${esc(h)}</span><b class="${/@/.test(v) ? 'email' : /^[\d\-+ ()]+$/.test(v) ? 'mono' : ''}">${esc(v)}</b></div>`).join('');
+  const opts = [1, 2, 3, 4, 5].map(n => `<option value="${n}" ${p && p.tickets === n ? 'selected' : ''}>${n}</option>`).join('');
+  $('#result').innerHTML = `<div class="card">
+    ${verdict}
+    <p class="name">${esc(s.name)}</p>
+    <div class="details"><div><span>מספר זהות</span><b class="mono">${esc(s.idDisplay || s.id)}</b></div>${fields}</div>
+    <form class="buy" id="buyForm" autocomplete="off">
+      <h3>${p ? 'עדכון רכישה קיימת' : 'רישום רכישה'}</h3>
+      <div class="field"><label for="tickets">מספר כרטיסים שנרכשו</label>
+        <select id="tickets" required><option value="" ${p ? '' : 'selected'} disabled>בחרו</option>${opts}</select></div>
+      <div class="field"><label for="invoice">מספר חשבונית</label>
+        <input id="invoice" class="mono" value="${p ? esc(p.invoice) : ''}" required></div>
+      <button class="btn ok big" type="submit" id="saveBtn">${p ? 'שמירת עדכון' : 'שמירה'}</button>
+      <p class="msg" id="buyMsg" hidden></p>
+    </form></div>`;
+  $('#buyForm').addEventListener('submit', ev => { ev.preventDefault(); save(false); });
+}
+
+async function save(force) {
+  const tickets = $('#tickets').value, invoice = $('#invoice').value.trim(), msg = $('#buyMsg');
+  msg.hidden = true;
+  if (!tickets) { msg.className = 'msg err'; msg.textContent = 'בחרו מספר כרטיסים'; msg.hidden = false; $('#tickets').focus(); return; }
+  if (!invoice) { msg.className = 'msg err'; msg.textContent = 'הזינו מספר חשבונית'; msg.hidden = false; $('#invoice').focus(); return; }
+  $('#saveBtn').disabled = true;
+  try {
+    const r = await api('/api/purchase', { method: 'POST', body: JSON.stringify({ studentId: current.student.id, tickets, invoice, station: station.get(), force }) });
+    $('#saved').textContent = `✓ ${r.updated ? 'עודכן' : 'נשמר'}: ${current.student.name} · ${r.purchase.tickets} כרטיסים · חשבונית ${r.purchase.invoice}`;
+    $('#saved').hidden = false;
+    reset(true);
+  } catch (e) {
+    $('#saveBtn').disabled = false;
+    msg.className = 'msg ' + (e.data && e.data.duplicateInvoice ? 'warn' : 'err');
+    msg.innerHTML = esc(e.message) + (e.data && e.data.duplicateInvoice ? ' <button type="button" class="btn" id="forceBtn">לשמור בכל זאת</button>' : '');
+    msg.hidden = false;
+    const f = $('#forceBtn'); if (f) f.addEventListener('click', () => save(true));
+  }
+}
+
+$('#scanForm').addEventListener('submit', e => { e.preventDefault(); lookup($('#scan').value); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { reset(); return; }
+  // a scanner "types" digits — catch them even when focus is elsewhere
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (/^[0-9]$/.test(e.key) && !['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) { $('#scan').value = ''; $('#scan').focus(); }
+});
+</script>
+</body>
+</html>

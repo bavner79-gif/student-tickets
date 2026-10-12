@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>רשימת רכישות</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&family=Secular+One&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>רשימת רכישות</h1>
+    <nav class="nav">
+      <a href="/">איתור</a>
+      <a href="/purchases">רשימת רכישות</a>
+      <a href="/admin" data-admin hidden>ניהול</a>
+      <button id="logout" type="button">יציאה</button>
+    </nav>
+  </header>
+  <div class="kpis" id="kpis"></div>
+  <div class="toolbar">
+    <input id="q" placeholder="חיפוש לפי שם, מספר זהות או חשבונית">
+    <button class="btn" id="refresh">רענון</button>
+    <button class="btn" type="button" id="exportBtn" data-admin hidden>הורדה לאקסל</button>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>עודכן</th><th>שם</th><th>מספר זהות</th><th>כרטיסים</th><th>חשבונית</th><th>עמדה</th><th data-admin hidden></th></tr></thead>
+    <tbody id="body"><tr><td colspan="7" class="muted">טוען…</td></tr></tbody>
+  </table></div>
+</div>
+<div class="toast" id="toast" hidden></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="/static/common.js"></script>
+<script src="/static/excel.js"></script>
+<script>
+let all = [], askDel = null;
+async function load() {
+  try { all = (await api('/api/purchases')).purchases; render(); } catch (e) { if (e.message !== 'auth') toast(e.message); }
+}
+function render() {
+  const t = all.reduce((s, p) => s + p.tickets, 0);
+  $('#kpis').innerHTML = `<div class="kpi"><span>סטודנטים שרכשו</span><b>${all.length}</b></div><div class="kpi"><span>סה"כ כרטיסים</span><b>${t}</b></div>`;
+  const q = $('#q').value.trim().toLowerCase();
+  const rows = all.filter(p => !q || [p.name, p.studentId, p.invoice, p.station].join(' ').toLowerCase().includes(q));
+  const admin = window.me && window.me.role === 'admin';
+  $('#body').innerHTML = rows.length ? rows.map(p => `<tr>
+    <td class="num">${fmtTime(p.updatedAt)}</td><td><b>${esc(p.name)}</b></td><td class="num">${esc(p.studentId)}</td>
+    <td class="num">${p.tickets}</td><td class="num">${esc(p.invoice)}</td><td>${esc(p.station || '')}</td>
+    ${admin ? `<td>${askDel === p.studentId ? `<button class="btn danger" data-del="${esc(p.studentId)}">למחוק?</button> <button class="btn" data-no>לא</button>` : `<button class="btn" data-ask="${esc(p.studentId)}">מחיקה</button>`}</td>` : ''}
+  </tr>`).join('') : `<tr><td colspan="7" class="muted">${q ? 'אין תוצאות לחיפוש.' : 'עדיין לא נרשמו רכישות. רכישה שתישמר בעמוד האיתור תופיע כאן.'}</td></tr>`;
+}
+document.addEventListener('me', render);
+document.addEventListener('click', async e => {
+  const a = e.target.closest('[data-ask]'); if (a) { askDel = a.dataset.ask; render(); return; }
+  if (e.target.closest('[data-no]')) { askDel = null; render(); return; }
+  const d = e.target.closest('[data-del]');
+  if (d) { try { await api('/api/purchase/' + d.dataset.del, { method: 'DELETE' }); askDel = null; toast('הרכישה נמחקה'); load(); } catch (err) { toast(err.message); } }
+});
+$('#q').addEventListener('input', render);
+$('#refresh').addEventListener('click', load);
+$('#exportBtn').addEventListener('click', () => downloadPurchasesXlsx().catch(e => toast(e.message)));
+load(); setInterval(load, 20000);
+</script>
+</body>
+</html>
