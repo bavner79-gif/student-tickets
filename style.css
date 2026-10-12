@@ -46,6 +46,10 @@ option{background:#1E2B42;color:#F3F6FB}
 .scan label{font-weight:800;width:100%;font-size:1.05rem}
 .scan input{flex:1 1 240px;min-width:0;font-family:var(--f-mono);font-size:2rem;padding:12px 16px;border:2px solid var(--line-strong);border-radius:14px;background:var(--sunk);color:var(--ink);direction:ltr;text-align:left;letter-spacing:.06em}
 .scan input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.scan input::placeholder{font-family:var(--f-body);letter-spacing:normal;font-size:1.4rem}
+.scan-actions{display:flex;gap:10px;flex:0 1 auto}
+.cam-btn{display:inline-flex;align-items:center;gap:8px}
+@media (max-width:600px){.scan-actions{flex:1 1 100%}.scan-actions .btn{flex:1 1 0;justify-content:center}}
 .hint{color:var(--muted);font-size:.9rem;width:100%}
 kbd{font-family:var(--f-mono);font-size:.8rem;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 5px;background:var(--sunk)}
 
@@ -62,6 +66,17 @@ kbd{font-family:var(--f-mono);font-size:.8rem;border:1px solid var(--line);borde
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0;backdrop-filter:blur(2px)}
 .idle{border:2px dashed var(--line);border-radius:16px;padding:32px 18px;text-align:center;color:var(--muted)}
 .idle strong{display:block;font-family:var(--f-display);font-weight:400;font-size:1.5rem;color:var(--ink)}
+button.idle{width:100%;font:inherit;color:var(--muted);background:transparent;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;transition:border-color .15s,background .15s}
+button.idle svg{color:var(--accent)}
+button.idle:hover,button.idle:active{border-color:var(--accent);background:var(--accent-soft)}
+
+/* camera overlay */
+.cam-overlay{position:fixed;inset:0;z-index:10;background:rgba(6,11,22,.92);display:flex;align-items:center;justify-content:center;padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px))}
+.cam-box{width:100%;max-width:560px;display:flex;flex-direction:column;gap:12px;text-align:center}
+.cam-title{margin:0;font-weight:800;font-size:1.15rem}
+#camView{width:100%;min-height:200px;border-radius:14px;overflow:hidden;background:#000;border:2px solid var(--line-strong)}
+#camView video{width:100%!important;height:auto!important;display:block}
+.cam-msg{margin:0;color:var(--muted);font-weight:600;min-height:1.4em}
 
 .verdict{border-radius:14px;padding:14px 18px;display:flex;gap:14px;align-items:center;border:1px solid currentColor}
 .verdict .mark{width:52px;height:52px;flex:none;border-radius:50%;display:grid;place-items:center;font-size:1.8rem;font-weight:800;color:var(--on-color)}

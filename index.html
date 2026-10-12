@@ -25,24 +25,38 @@
 
   <form class="scan" id="scanForm" autocomplete="off">
     <label for="scan">סריקת ברקוד או הקלדת מספר זהות</label>
-    <input id="scan" inputmode="numeric" placeholder="מספר זהות" autofocus>
-    <button class="btn primary big" type="submit">חיפוש</button>
-    <div class="hint">סורק הברקוד מקליד את המספר ולוחץ Enter לבד. בהקלדה ידנית לוחצים <kbd>Enter</kbd>. <kbd>Esc</kbd> מנקה את המסך.</div>
+    <input id="scan" inputmode="numeric" placeholder="מספר זהות">
+    <div class="scan-actions">
+      <button class="btn big cam-btn" type="button" data-cam><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M16.5 8v8"/></svg><span>מצלמה</span></button>
+      <button class="btn primary big" type="submit">חיפוש</button>
+    </div>
+    <div class="hint">בטלפון או טאבלט: לוחצים "מצלמה" ומכוונים לברקוד. סורק ברקוד USB מקליד את המספר ולוחץ Enter לבד. בהקלדה ידנית לוחצים <kbd>Enter</kbd>. <kbd>Esc</kbd> מנקה את המסך.</div>
   </form>
 
   <div id="saved" class="banner ok" hidden></div>
-  <section id="result"><div class="idle"><strong>ממתין לסריקה</strong>סרקו את הברקוד שעל תעודת הסטודנט או הקלידו מספר זהות</div></section>
+  <section id="result"><button type="button" class="idle cam-start" data-cam><svg viewBox="0 0 24 24" width="44" height="44" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M16.5 8v8"/></svg><strong>ממתין לסריקה</strong><span>לחצו כאן לסריקת הברקוד במצלמה, או הקלידו מספר זהות למעלה</span></button></section>
+</div>
+<div class="cam-overlay" id="camOverlay" hidden role="dialog" aria-modal="true" aria-label="סריקה במצלמה">
+  <div class="cam-box">
+    <p class="cam-title">כוונו את המצלמה לברקוד שעל התעודה</p>
+    <div id="camView"></div>
+    <p class="cam-msg" id="camMsg">מפעיל מצלמה…</p>
+    <button class="btn big" type="button" id="camClose">ביטול</button>
+  </div>
 </div>
 <div class="toast" id="toast" hidden></div>
 <script src="/static/common.js"></script>
 <script>
 let current = null;
-const IDLE = '<div class="idle"><strong>ממתין לסריקה</strong>סרקו את הברקוד שעל תעודת הסטודנט או הקלידו מספר זהות</div>';
+const IDLE = '<button type="button" class="idle cam-start" data-cam><svg viewBox="0 0 24 24" width="44" height="44" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M16.5 8v8"/></svg><strong>ממתין לסריקה</strong><span>לחצו כאן לסריקת הברקוד במצלמה, או הקלידו מספר זהות למעלה</span></button>';
+const TOUCH = matchMedia('(pointer: coarse)').matches;
+const focusScan = () => { if (!TOUCH) $('#scan').focus(); };
+focusScan();
 
 document.addEventListener('me', e => { $('#noList').hidden = e.detail.students > 0; });
 
 function reset(keepSaved) {
-  current = null; $('#result').innerHTML = IDLE; $('#scan').value = ''; $('#scan').focus();
+  current = null; $('#result').innerHTML = IDLE; $('#scan').value = ''; focusScan();
   if (!keepSaved) $('#saved').hidden = true;
 }
 
@@ -62,7 +76,7 @@ async function lookup(raw) {
         <p class="muted" style="margin:0">בדקו שהמספר הוקלד נכון ונסו שוב. אם הסטודנט מציג אישור תקף – פנו לאחראי המשמרת.</p></div>`;
     } else { $('#result').innerHTML = IDLE; toast(e.message); }
   }
-  $('#scan').select();
+  if (!TOUCH) $('#scan').select();
 }
 
 function render() {
@@ -109,9 +123,59 @@ async function save(force) {
   }
 }
 
+/* ---------- camera scanning ---------- */
+const SCAN_LIB = 'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js';
+let libPromise = null, scanner = null, handled = false;
+function loadLib() {
+  if (window.Html5Qrcode) return Promise.resolve();
+  return libPromise ||= new Promise((ok, fail) => {
+    const sc = document.createElement('script'); sc.src = SCAN_LIB; sc.onload = ok;
+    sc.onerror = () => { libPromise = null; fail(new Error('lib')); }; document.head.appendChild(sc);
+  });
+}
+async function openCamera() {
+  $('#camOverlay').hidden = false; $('#camMsg').textContent = 'מפעיל מצלמה…'; handled = false;
+  try {
+    await loadLib();
+    const F = Html5QrcodeSupportedFormats;
+    scanner = new Html5Qrcode('camView', {
+      verbose: false,
+      formatsToSupport: [F.CODE_128, F.CODE_39, F.CODE_93, F.CODABAR, F.ITF, F.EAN_13, F.EAN_8, F.UPC_A, F.QR_CODE, F.PDF_417, F.DATA_MATRIX],
+      experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+    });
+    await scanner.start({ facingMode: 'environment' }, {
+      fps: 12,
+      qrbox: (w, h) => ({ width: Math.floor(w * 0.88), height: Math.floor(Math.min(h * 0.6, w * 0.5)) }),
+    }, onCode, () => {});
+    $('#camMsg').textContent = 'מחזיקים את התעודה יציבה, הסריקה אוטומטית';
+  } catch (e) {
+    const name = (e && (e.name || '')) + ' ' + String(e && e.message || e);
+    $('#camMsg').textContent = /lib/.test(name) ? 'לא הצלחנו לטעון את רכיב הסריקה. בדקו את החיבור לאינטרנט ונסו שוב.'
+      : /NotAllowed|Permission|denied/i.test(name) ? 'אין הרשאה למצלמה. אשרו גישה למצלמה בהגדרות הדפדפן ונסו שוב.'
+      : /NotFound|no camera|Requested device/i.test(name) ? 'לא נמצאה מצלמה במכשיר הזה.'
+      : 'לא הצלחנו להפעיל את המצלמה. סגרו ונסו שוב.';
+  }
+}
+async function closeCamera() {
+  try { if (scanner && scanner.isScanning) await scanner.stop(); } catch {}
+  try { if (scanner) scanner.clear(); } catch {}
+  scanner = null; $('#camOverlay').hidden = true;
+}
+async function onCode(text) {
+  const id = String(text || '').replace(/\D/g, '');
+  if (handled || !id) return;
+  handled = true;
+  try { navigator.vibrate && navigator.vibrate(80); } catch {}
+  await closeCamera();
+  $('#scan').value = id;
+  lookup(id);
+}
+document.addEventListener('click', e => { if (e.target.closest('[data-cam]')) openCamera(); });
+$('#camClose').addEventListener('click', closeCamera);
+
 $('#scanForm').addEventListener('submit', e => { e.preventDefault(); lookup($('#scan').value); });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { reset(); return; }
+  if (e.key === 'Escape') { if (!$('#camOverlay').hidden) { closeCamera(); return; } reset(); return; }
   // a scanner "types" digits — catch them even when focus is elsewhere
   const tag = document.activeElement && document.activeElement.tagName;
   if (/^[0-9]$/.test(e.key) && !['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) { $('#scan').value = ''; $('#scan').focus(); }
