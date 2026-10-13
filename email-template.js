@@ -4,6 +4,8 @@ const path = require('path');
 
 const EVENT = process.env.EVENT_NAME || 'מסיבת פתיחת שנה';
 const SUPPORT = process.env.SUPPORT_EMAIL || 'info@reichman-u.com';
+const NOTE_HE = 'הכרטיס אישי ואינו ניתן להעברה – יישלח עד 48 שעות לפני האירוע.';
+const NOTE_EN = 'The ticket is personal and non-transferable – it will be sent no later than 48 hours before the event.';
 const SUBJECT = process.env.MAIL_SUBJECT || 'אישור רכישת כרטיס/ים מסיבת פתיחת שנה';
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -34,7 +36,8 @@ module.exports = function confirmation({ name, count, invoice, at }) {
     `שלום ${name}`,
     `אישור רכישה עבור ${ticketsText} בחשבונית מספר ${invoice}`, '',
     `שם האירוע: ${EVENT}`, `תאריך: ${date}`, `שעה: ${time}`, `שם המזמין: ${name}`,
-    `מספר כרטיסים: ${count}`, `מספר חשבונית: ${invoice}`, `אימייל לתמיכה: ${SUPPORT}`,
+    `מספר כרטיסים: ${count}`, `מספר חשבונית: ${invoice}`, `אימייל לתמיכה: ${SUPPORT}`, '',
+    NOTE_HE, NOTE_EN,
   ].join('\n');
   const html = `<!doctype html><html lang="he" dir="rtl"><body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#222">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" dir="rtl"><tr><td align="center" style="padding:16px 8px">
@@ -44,6 +47,10 @@ ${banner ? `<tr><td><img src="cid:banner@tickets" width="643" alt="${esc(EVENT)}
 <tr><td style="padding:0 6px 18px;font-size:16px">אישור רכישה עבור <b>${ticketsText}</b> בחשבונית מספר <b dir="ltr">${esc(invoice)}</b></td></tr>
 <tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0" dir="rtl" style="font-size:14px">
 ${rows.map(([k, v]) => `<tr><td style="padding:6px;font-weight:700;width:150px;vertical-align:top">${k}:</td><td style="padding:6px;color:#444">${v}</td></tr>`).join('\n')}
+</table></td></tr>
+<tr><td style="padding:18px 6px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff8e6;border:1px solid #f0d58c;border-radius:8px">
+<tr><td dir="rtl" style="padding:12px 14px 4px;font-size:14px;font-weight:700;color:#5c4400;text-align:right">${NOTE_HE}</td></tr>
+<tr><td dir="ltr" style="padding:0 14px 12px;font-size:13px;color:#5c4400;text-align:left">${NOTE_EN}</td></tr>
 </table></td></tr>
 </table></td></tr></table></body></html>`;
   return { subject: SUBJECT, text, html, inline: banner ? [{ cid: 'banner@tickets', type: 'image/jpeg', name: 'banner.jpg', data: banner }] : [] };
