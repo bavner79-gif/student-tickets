@@ -26,8 +26,8 @@
     <button class="btn" type="button" id="exportBtn" data-admin hidden>הורדה לאקסל</button>
   </div>
   <div class="tablewrap"><table>
-    <thead><tr><th>עודכן</th><th>שם</th><th>מספר זהות</th><th>כרטיסים</th><th>חשבונית</th><th>עמדה</th><th data-admin hidden></th></tr></thead>
-    <tbody id="body"><tr><td colspan="7" class="muted">טוען…</td></tr></tbody>
+    <thead><tr><th>עודכן</th><th>שם</th><th>מספר זהות</th><th>כרטיסים</th><th>חשבונית</th><th>עמדה</th><th class="mailcol" hidden>מייל</th><th data-admin hidden></th></tr></thead>
+    <tbody id="body"><tr><td colspan="9" class="muted">טוען…</td></tr></tbody>
   </table></div>
 </div>
 <div class="toast" id="toast" hidden></div>
@@ -35,11 +35,21 @@
 <script src="/static/common.js"></script>
 <script src="/static/excel.js"></script>
 <script>
-let all = [], askDel = null;
+let all = [], askDel = null, mailOn = false;
 async function load() {
-  try { all = (await api('/api/purchases')).purchases; render(); } catch (e) { if (e.message !== 'auth') toast(e.message); }
+  try { const r = await api('/api/purchases'); all = r.purchases; mailOn = r.mail; render(); } catch (e) { if (e.message !== 'auth') toast(e.message); }
+}
+function mailCell(p) {
+  const st = p.emailStatus;
+  if (st === 'sent') return `<span class="mail ok" title="${esc(p.emailTo)}">✓ נשלח</span>`;
+  if (st === 'sending') return `<span class="mail">שולח…</span>`;
+  if (st === 'no_email') return `<span class="mail muted">אין מייל</span>`;
+  const btn = `<button class="btn mini" data-resend="${esc(p.studentId)}">שליחה חוזרת</button>`;
+  if (st === 'failed') return `<span class="mail bad" title="${esc(p.emailError || '')}">✗ נכשל</span> ${btn}`;
+  return btn;
 }
 function render() {
+  document.querySelector('.mailcol').hidden = !mailOn;
   const t = all.reduce((s, p) => s + p.tickets, 0);
   const tx = new Set(all.map(p => p.invoice.toLowerCase())).size;
   $('#kpis').innerHTML = `<div class="kpi"><span>אנשים עם כרטיס</span><b>${all.length}</b></div><div class="kpi"><span>סה"כ כרטיסים</span><b>${t}</b></div><div class="kpi"><span>חשבוניות</span><b>${tx}</b></div>`;
@@ -49,13 +59,16 @@ function render() {
   $('#body').innerHTML = rows.length ? rows.map(p => `<tr>
     <td class="num">${fmtTime(p.updatedAt)}</td><td><b>${esc(p.name)}</b></td><td class="num">${esc(p.studentId)}</td>
     <td class="num">${p.tickets}</td><td class="num">${esc(p.invoice)}</td><td>${esc(p.station || '')}</td>
+    ${mailOn ? `<td>${mailCell(p)}</td>` : ''}
     ${admin ? `<td>${askDel === p.studentId ? `<button class="btn danger" data-del="${esc(p.studentId)}">למחוק?</button> <button class="btn" data-no>לא</button>` : `<button class="btn" data-ask="${esc(p.studentId)}">מחיקה</button>`}</td>` : ''}
-  </tr>`).join('') : `<tr><td colspan="7" class="muted">${q ? 'אין תוצאות לחיפוש.' : 'עדיין לא נרשמו רכישות. רכישה שתישמר בעמוד האיתור תופיע כאן.'}</td></tr>`;
+  </tr>`).join('') : `<tr><td colspan="9" class="muted">${q ? 'אין תוצאות לחיפוש.' : 'עדיין לא נרשמו רכישות. רכישה שתישמר בעמוד האיתור תופיע כאן.'}</td></tr>`;
 }
 document.addEventListener('me', render);
 document.addEventListener('click', async e => {
   const a = e.target.closest('[data-ask]'); if (a) { askDel = a.dataset.ask; render(); return; }
   if (e.target.closest('[data-no]')) { askDel = null; render(); return; }
+  const rs = e.target.closest('[data-resend]');
+  if (rs) { rs.disabled = true; rs.textContent = 'שולח…'; try { const r = await api('/api/mail/resend/' + rs.dataset.resend, { method: 'POST' }); toast('נשלח אל ' + r.to); } catch (err) { toast(err.message); } load(); return; }
   const d = e.target.closest('[data-del]');
   if (d) { try { await api('/api/purchase/' + d.dataset.del, { method: 'DELETE' }); askDel = null; toast('הרכישה נמחקה'); load(); } catch (err) { toast(err.message); } }
 });

@@ -147,6 +147,9 @@ table{border-collapse:collapse;width:100%;min-width:640px;font-size:.95rem}
 th,td{text-align:start;padding:10px 12px;border-bottom:1px solid var(--line)}
 th{font-size:.8rem;color:var(--muted);background:var(--sunk)}
 tr:last-child td{border-bottom:0}
+.mail{font-weight:700;font-size:.88rem;white-space:nowrap}
+.mail.ok{color:var(--ok)} .mail.bad{color:var(--bad)}
+.btn.mini{padding:3px 10px;font-size:.82rem;border-radius:8px}
 td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 
 /* login */

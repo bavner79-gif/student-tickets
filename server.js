@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const createStore = require('./store');
+const mailer = require('./mailer');
+const confirmationEmail = require('./email-template');
 
 const PORT = process.env.PORT || 3000;
 const STAFF_PASSWORD = process.env.STAFF_PASSWORD || 'staff';
@@ -84,7 +86,28 @@ async function api(req, res, url, s) {
   const admin = s.role === 'admin';
   const needAdmin = () => json(res, 403, { error: 'הפעולה מותרת רק למנהל' });
 
-  if (route === 'GET /api/me') return json(res, 200, { role: s.role, students: await store.countStudents(), manual: await store.countManual(), upload: await store.getMeta('upload') });
+  if (route === 'GET /api/me') return json(res, 200, { role: s.role, students: await store.countStudents(), manual: await store.countManual(), upload: await store.getMeta('upload'),
+    mail: { configured: mailer.configured(), from: s.role === 'admin' ? mailer.from() : undefined } });
+
+  if (route === 'POST /api/mail/test') {
+    if (!admin) return needAdmin();
+    if (!mailer.configured()) return json(res, 400, { error: 'המייל עדיין לא מחובר. צריך להגדיר GMAIL_USER ו-GMAIL_APP_PASSWORD ב-Render.' });
+    const b = await readBody(req, 5000);
+    const to = String(b.to || mailer.from()).trim();
+    const m = confirmationEmail({ name: 'בדיקה', id: '000000000', invoice: 'TEST-1' });
+    const [r] = await mailer.sendMany([{ to, ...m, subject: '[בדיקה] ' + m.subject }]);
+    return r.ok ? json(res, 200, { ok: true, to }) : json(res, 502, { error: r.error });
+  }
+
+  let rm;
+  if (req.method === 'POST' && (rm = /^\/api\/mail\/resend\/([^/]+)$/.exec(url.pathname))) {
+    if (!mailer.configured()) return json(res, 400, { error: 'המייל לא מחובר' });
+    const id = normId(decodeURIComponent(rm[1]));
+    if (!(await store.getPurchase(id))) return json(res, 404, { error: 'רכישה לא נמצאה' });
+    await sendConfirmations([id]);
+    const p = await store.getPurchase(id);
+    return p.emailStatus === 'sent' ? json(res, 200, { ok: true, to: p.emailTo }) : json(res, 502, { error: p.emailStatus === 'no_email' ? 'אין כתובת מייל לאדם הזה' : (p.emailError || 'השליחה נכשלה') });
+  }
 
   // The columns a manually added person gets: the same columns as the uploaded Excel, plus a study-year column set to 0.
   if (route === 'GET /api/fields') return json(res, 200, { fields: await newPersonFields() });
@@ -159,12 +182,14 @@ async function api(req, res, url, s) {
       const names = people.filter(p => taken.includes(p.id)).map(p => p.name).join(', ');
       return json(res, 409, { error: `כבר נרשם כרטיס עבור: ${names}. הסירו אותם מהרכישה ונסו שוב.`, taken });
     }
-    return json(res, 200, { saved: people.map(p => ({ id: p.id, name: p.name })), invoice });
+    sendConfirmations(ids).catch(e => console.error('sendConfirmations', e));
+    return json(res, 200, { saved: people.map(p => ({ id: p.id, name: p.name })), invoice, mail: mailer.configured() });
   }
 
   if (route === 'GET /api/purchases') {
     const list = await store.listPurchases();
-    return json(res, 200, { purchases: list.map(p => ({ studentId: p.studentId, tickets: p.tickets, invoice: p.invoice, station: p.station, createdAt: p.createdAt, updatedAt: p.updatedAt, name: p.student ? p.student.name : '(לא במאגר)' })) });
+    return json(res, 200, { mail: mailer.configured(), purchases: list.map(p => ({ studentId: p.studentId, tickets: p.tickets, invoice: p.invoice, station: p.station, createdAt: p.createdAt, updatedAt: p.updatedAt, name: p.student ? p.student.name : '(לא במאגר)',
+      emailTo: p.emailTo, emailStatus: p.emailStatus, emailError: p.emailError })) });
   }
 
   if (req.method === 'DELETE' && (m = /^\/api\/purchase\/([^/]+)$/.exec(url.pathname))) {
@@ -214,6 +239,34 @@ async function api(req, res, url, s) {
   }
 
   return json(res, 404, { error: 'לא נמצא' });
+}
+
+// The buyer's email: prefer a personal/external address, fall back to any email column.
+function pickEmail(student) {
+  const emails = (student.fields || []).filter(([h, v]) => /מייל|דוא"?ל|e-?mail/i.test(h) && /@/.test(v || ''));
+  const ext = emails.find(([h]) => /חיצוני|פרטי|external|personal/i.test(h));
+  return (ext || emails[0] || [])[1] || '';
+}
+
+// Send confirmation emails in the background; record each result on the purchase.
+async function sendConfirmations(ids) {
+  if (!mailer.configured()) return;
+  const jobs = [];
+  for (const id of ids) {
+    const p = await store.getPurchase(id), st = await store.getStudent(id);
+    if (!p || !st) continue;
+    const to = pickEmail(st);
+    if (!to) { await store.setEmailStatus(id, { status: 'no_email' }); continue; }
+    await store.setEmailStatus(id, { to, status: 'sending' });
+    jobs.push({ id, to, ...confirmationEmail({ name: st.name, id: st.idDisplay || st.id, invoice: p.invoice }) });
+  }
+  if (!jobs.length) return;
+  const results = await mailer.sendMany(jobs);
+  for (let i = 0; i < jobs.length; i++) {
+    const r = results[i] || { ok: false, error: 'unknown' };
+    await store.setEmailStatus(jobs[i].id, { to: jobs[i].to, status: r.ok ? 'sent' : 'failed', error: r.ok ? null : r.error });
+    if (!r.ok) console.warn('email failed', jobs[i].id, r.error);
+  }
 }
 
 async function newPersonFields() {

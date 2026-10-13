@@ -236,7 +236,7 @@ async function save(force) {
   $('#saveBtn').disabled = true;
   try {
     const r = await api('/api/purchases', { method: 'POST', body: JSON.stringify({ studentIds: cart.map(s => s.student.id), invoice, station: station.get(), force }) });
-    $('#saved').innerHTML = `✓ נשמר · חשבונית <span class="mono">${esc(r.invoice)}</span> · ${r.saved.length} ${r.saved.length === 1 ? 'כרטיס' : 'כרטיסים'}: ${r.saved.map(p => esc(p.name)).join(', ')}`;
+    $('#saved').innerHTML = `✓ נשמר · חשבונית <span class="mono">${esc(r.invoice)}</span> · ${r.saved.length} ${r.saved.length === 1 ? 'כרטיס' : 'כרטיסים'}: ${r.saved.map(p => esc(p.name)).join(', ')}${r.mail ? ' · אישור נשלח במייל' : ''}`;
     $('#saved').hidden = false;
     resetAll(); window.scrollTo({ top: 0 });
   } catch (e) {

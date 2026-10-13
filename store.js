@@ -19,6 +19,8 @@ function createPgStore(url) {
       await q(`CREATE TABLE IF NOT EXISTS purchases (
         student_id TEXT PRIMARY KEY, tickets INT NOT NULL, invoice TEXT NOT NULL,
         station TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+      for (const col of ['email_to TEXT', 'email_status TEXT', 'email_error TEXT', 'email_at TIMESTAMPTZ'])
+        await q(`ALTER TABLE purchases ADD COLUMN IF NOT EXISTS ${col}`);
       await q(`CREATE TABLE IF NOT EXISTS purchase_log (
         id SERIAL PRIMARY KEY, student_id TEXT, action TEXT, tickets INT, invoice TEXT, station TEXT,
         at TIMESTAMPTZ NOT NULL DEFAULT now())`);
@@ -90,6 +92,9 @@ function createPgStore(url) {
         return { taken: [] };
       } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; } finally { client.release(); }
     },
+    async setEmailStatus(id, { to, status, error }) {
+      await q(`UPDATE purchases SET email_to=$2, email_status=$3, email_error=$4, email_at=now() WHERE student_id=$1`, [id, to || null, status, error || null]);
+    },
     async deletePurchase(id) {
       const p = await this.getPurchase(id);
       await q(`DELETE FROM purchases WHERE student_id=$1`, [id]);
@@ -106,7 +111,8 @@ function createPgStore(url) {
 }
 
 function rowToPurchase(r) {
-  return { studentId: r.student_id, tickets: r.tickets, invoice: r.invoice, station: r.station, createdAt: r.created_at, updatedAt: r.updated_at };
+  return { studentId: r.student_id, tickets: r.tickets, invoice: r.invoice, station: r.station, createdAt: r.created_at, updatedAt: r.updated_at,
+    emailTo: r.email_to || null, emailStatus: r.email_status || null, emailError: r.email_error || null, emailAt: r.email_at || null };
 }
 
 function createFileStore(file) {
@@ -147,6 +153,10 @@ function createFileStore(file) {
         db.log.push({ student_id: id, action: 'create', tickets: 1, invoice, station, at: now });
       }
       save(); return { taken: [] };
+    },
+    async setEmailStatus(id, { to, status, error }) {
+      const p = db.purchases[id]; if (!p) return;
+      Object.assign(p, { emailTo: to || null, emailStatus: status, emailError: error || null, emailAt: new Date().toISOString() }); save();
     },
     async deletePurchase(id) {
       const p = db.purchases[id];

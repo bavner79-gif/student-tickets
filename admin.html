@@ -32,6 +32,15 @@
     <p class="muted" style="margin:0">העלאה של קובץ חדש מחליפה את רשימת הסטודנטים. רכישות שכבר נרשמו ואנשים שנוספו ידנית בעמדות נשמרים.</p>
   </section>
 
+  <section class="card" id="mailCard">
+    <h2 style="margin:0;font-size:1.15rem">אישור רכישה במייל</h2>
+    <p id="mailInfo" class="muted" style="margin:0">טוען…</p>
+    <form class="toolbar" id="mailTest" hidden autocomplete="off">
+      <input id="mailTo" type="email" dir="ltr" placeholder="כתובת לבדיקה (ברירת מחדל: כתובת השולח)">
+      <button class="btn primary" type="submit" id="mailBtn">שליחת מייל בדיקה</button>
+    </form>
+  </section>
+
   <section class="card">
     <h2 style="margin:0;font-size:1.15rem">גיבוי הרכישות</h2>
     <p class="muted" style="margin:0">קובץ אקסל עם כל הרכישות, פרטי הסטודנטים ויומן של כל שינוי.</p>
@@ -49,7 +58,19 @@ function showInfo(me) {
     ? `במאגר <b>${me.students.toLocaleString('he-IL')}</b> אנשים${u ? ` · מהקובץ <b>${esc(u.file)}</b> · הועלה ${fmtTime(u.at)}` : ''}${me.manual ? ` · <b>${me.manual}</b> נוספו ידנית בעמדות` : ''}`
     : 'עדיין לא הועלה קובץ.';
 }
-document.addEventListener('me', e => showInfo(e.detail));
+document.addEventListener('me', e => { showInfo(e.detail); showMail(e.detail.mail || {}); });
+function showMail(m) {
+  $('#mailInfo').innerHTML = m.configured
+    ? `מחובר. אישורים יוצאים אוטומטית מהכתובת <b dir="ltr">${esc(m.from)}</b> לכל אדם שנרשם לו כרטיס.`
+    : 'עדיין לא מחובר. כשתוגדר כתובת Gmail וסיסמת אפליקציה ב-Render, כל רוכש יקבל אישור במייל.';
+  $('#mailTest').hidden = !m.configured;
+}
+$('#mailTest').addEventListener('submit', async e => {
+  e.preventDefault(); $('#mailBtn').disabled = true; $('#mailBtn').textContent = 'שולח…';
+  try { const r = await api('/api/mail/test', { method: 'POST', body: JSON.stringify({ to: $('#mailTo').value.trim() }) }); toast('מייל בדיקה נשלח אל ' + r.to); }
+  catch (err) { toast(err.message); }
+  $('#mailBtn').disabled = false; $('#mailBtn').textContent = 'שליחת מייל בדיקה';
+});
 async function send(file) {
   $('#info').textContent = 'קורא את הקובץ ומעלה…';
   try {
