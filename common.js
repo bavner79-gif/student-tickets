@@ -22,6 +22,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const me = await api('/api/me');
     window.me = me;
     if (me.role === 'admin') document.querySelectorAll('[data-admin]').forEach(e => e.hidden = false);
+    if (me.station) {
+      station.set(me.station);
+      const h = document.querySelector('.top h1');
+      if (h && !h.querySelector('.who')) { const b = document.createElement('span'); b.className = 'who'; b.textContent = 'עמדה: ' + me.station; h.appendChild(b); }
+    }
     document.dispatchEvent(new CustomEvent('me', { detail: me }));
   } catch {}
 });

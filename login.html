@@ -11,10 +11,9 @@
 <body>
 <div class="login card">
   <h1 style="font-family:var(--f-display);font-weight:400;margin:0">כניסה לעמדת המכירה</h1>
-  <p class="muted" style="margin:0" id="sub">הזינו את סיסמת הצוות. המחשב יישאר מחובר עד סוף היום.</p>
+  <p class="muted" style="margin:0" id="sub">הזינו את הסיסמה האישית של העמדה. המחשב יישאר מחובר עד סוף היום.</p>
   <form id="f">
     <div class="field"><label for="pw">סיסמה</label><input id="pw" type="password" autocomplete="current-password" autofocus required></div>
-    <div class="field"><label for="st">שם העמדה (לא חובה)</label><input id="st" placeholder="לדוגמה: עמדה 1"></div>
     <button class="btn primary big" type="submit">כניסה</button>
     <p class="msg err" id="err" hidden></p>
   </form>
@@ -22,14 +21,13 @@
 <script>
 const q = new URLSearchParams(location.search);
 if (q.get('admin')) document.getElementById('sub').textContent = 'לעמוד הניהול נדרשת סיסמת מנהל.';
-try { document.getElementById('st').value = localStorage.getItem('station') || ''; } catch {}
 document.getElementById('f').addEventListener('submit', async e => {
   e.preventDefault();
   const err = document.getElementById('err'); err.hidden = true;
-  try { localStorage.setItem('station', document.getElementById('st').value.trim()); } catch {}
   const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: document.getElementById('pw').value }) });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) { err.textContent = d.error || 'הכניסה נכשלה'; err.hidden = false; return; }
+  try { localStorage.setItem('station', d.station || ''); } catch {}
   location.href = q.get('admin') && d.role === 'admin' ? '/admin' : '/';
 });
 </script>

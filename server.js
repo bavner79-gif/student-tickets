@@ -9,8 +9,15 @@ const mailer = require('./mailer');
 const confirmationEmail = require('./email-template');
 
 const PORT = process.env.PORT || 3000;
-const STAFF_PASSWORD = process.env.STAFF_PASSWORD || 'staff';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
+// Station logins: STATION_USERS="שרה:pass1;גיא:pass2" — each password signs in as that station.
+// Falls back to a single STAFF_PASSWORD (station named at login) when STATION_USERS is not set.
+const STATIONS = String(process.env.STATION_USERS || '').split(/[;\n]/).map(x => x.trim()).filter(Boolean).map(x => {
+  const i = x.lastIndexOf(':'); return { name: x.slice(0, i).trim(), password: x.slice(i + 1).trim() };
+}).filter(x => x.name && x.password);
+const STAFF_PASSWORD = STATIONS.length ? null : (process.env.STAFF_PASSWORD || 'staff');
+const ADMIN_STATION = process.env.ADMIN_STATION_NAME || 'מנהל';
+const TOKEN_V = 2;
 const SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const SESSION_HOURS = 14;
 const PUBLIC = path.join(__dirname, 'public');
@@ -48,8 +55,8 @@ function readBody(req, limit = 30 * 1024 * 1024) {
 
 /* ---------------- sessions (signed cookie) ---------------- */
 const sign = p => crypto.createHmac('sha256', SECRET).update(p).digest('base64url');
-function makeToken(role) {
-  const p = Buffer.from(JSON.stringify({ role, exp: Date.now() + SESSION_HOURS * 3600e3 })).toString('base64url');
+function makeToken(role, station) {
+  const p = Buffer.from(JSON.stringify({ v: TOKEN_V, role, station, exp: Date.now() + SESSION_HOURS * 3600e3 })).toString('base64url');
   return p + '.' + sign(p);
 }
 function session(req) {
@@ -59,7 +66,7 @@ function session(req) {
   if (!p || !sig) return null;
   const good = sign(p);
   if (sig.length !== good.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(good))) return null;
-  try { const s = JSON.parse(Buffer.from(p, 'base64url').toString()); return s.exp > Date.now() ? s : null; } catch { return null; }
+  try { const s = JSON.parse(Buffer.from(p, 'base64url').toString()); return s.v === TOKEN_V && s.exp > Date.now() ? s : null; } catch { return null; }
 }
 const attempts = new Map();
 
@@ -72,13 +79,16 @@ async function api(req, res, url, s) {
     const a = attempts.get(ip) || { n: 0, t: Date.now() };
     if (Date.now() - a.t > 10 * 60e3) { a.n = 0; a.t = Date.now(); }
     if (a.n >= 10) return json(res, 429, { error: 'יותר מדי ניסיונות. נסו שוב בעוד כמה דקות.' });
-    const { password } = await readBody(req, 10000);
-    const role = password === ADMIN_PASSWORD ? 'admin' : password === STAFF_PASSWORD ? 'staff' : null;
+    const { password, station: typed } = await readBody(req, 10000);
+    const pw = String(password || '');
+    const hit = STATIONS.find(x => x.password === pw);
+    const role = pw === ADMIN_PASSWORD ? 'admin' : hit ? 'staff' : (STAFF_PASSWORD && pw === STAFF_PASSWORD) ? 'staff' : null;
+    const station = role === 'admin' ? ADMIN_STATION : hit ? hit.name : String(typed || '').trim().slice(0, 60) || 'עמדה';
     if (!role) { a.n++; attempts.set(ip, a); return json(res, 401, { error: 'סיסמה שגויה' }); }
     attempts.delete(ip);
     const secure = req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
-    res.setHeader('Set-Cookie', `sid=${makeToken(role)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_HOURS * 3600}${secure}`);
-    return json(res, 200, { role });
+    res.setHeader('Set-Cookie', `sid=${makeToken(role, station)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_HOURS * 3600}${secure}`);
+    return json(res, 200, { role, station });
   }
   if (route === 'POST /api/logout') { res.setHeader('Set-Cookie', 'sid=; Path=/; Max-Age=0'); return json(res, 200, { ok: true }); }
 
@@ -86,7 +96,7 @@ async function api(req, res, url, s) {
   const admin = s.role === 'admin';
   const needAdmin = () => json(res, 403, { error: 'הפעולה מותרת רק למנהל' });
 
-  if (route === 'GET /api/me') return json(res, 200, { role: s.role, students: await store.countStudents(), manual: await store.countManual(), upload: await store.getMeta('upload'),
+  if (route === 'GET /api/me') return json(res, 200, { role: s.role, station: s.station, namedStations: STATIONS.length > 0, students: await store.countStudents(), manual: await store.countManual(), upload: await store.getMeta('upload'),
     mail: { configured: mailer.configured(), from: s.role === 'admin' ? mailer.from() : undefined } });
 
   if (route === 'POST /api/mail/test') {
@@ -124,7 +134,7 @@ async function api(req, res, url, s) {
     const first = get(/שם\s*פרטי|first/i), last = get(/שם\s*משפחה|last|surname/i), full = get(/^שם(\s*מלא)?$|full\s*name|^name$/i);
     const name = full || [first, last].filter(Boolean).join(' ');
     if (!name) return json(res, 400, { error: 'יש להזין שם' });
-    const data = { id, idDisplay: String(b.id).trim().slice(0, 20), name, fields, manual: true, addedAt: new Date().toISOString(), addedBy: String(b.station || '').trim().slice(0, 60) };
+    const data = { id, idDisplay: String(b.id).trim().slice(0, 20), name, fields, manual: true, addedAt: new Date().toISOString(), addedBy: s.station || '' };
     if (!(await store.addStudent({ id, data }))) return json(res, 409, { error: 'מספר הזהות הזה כבר קיים במאגר' });
     return json(res, 200, { student: data, purchase: null });
   }
@@ -141,7 +151,7 @@ async function api(req, res, url, s) {
   if (route === 'POST /api/purchase') {
     const b = await readBody(req, 10000);
     const id = normId(b.studentId), tickets = parseInt(b.tickets, 10);
-    const invoice = String(b.invoice || '').trim(), station = String(b.station || '').trim().slice(0, 60);
+    const invoice = String(b.invoice || '').trim(), station = s.station || String(b.station || '').trim().slice(0, 60);
     const student = id && await store.getStudent(id);
     if (!student) return json(res, 404, { error: 'הסטודנט לא נמצא במאגר' });
     if (!(tickets >= 1 && tickets <= 5)) return json(res, 400, { error: 'יש לבחור מספר כרטיסים בין 1 ל-5' });
@@ -161,7 +171,7 @@ async function api(req, res, url, s) {
   if (route === 'POST /api/purchases') {
     const b = await readBody(req, 20000);
     const ids = [...new Set((Array.isArray(b.studentIds) ? b.studentIds : []).map(normId).filter(Boolean))];
-    const invoice = String(b.invoice || '').trim(), station = String(b.station || '').trim().slice(0, 60);
+    const invoice = String(b.invoice || '').trim(), station = s.station || String(b.station || '').trim().slice(0, 60);
     if (!ids.length) return json(res, 400, { error: 'אין אנשים ברכישה' });
     if (ids.length > 30) return json(res, 400, { error: 'יותר מדי אנשים ברכישה אחת' });
     if (!invoice) return json(res, 400, { error: 'יש להזין מספר חשבונית' });
@@ -303,5 +313,6 @@ const server = http.createServer(async (req, res) => {
 
 store.init().then(() => {
   server.listen(PORT, () => console.log(`Running on port ${PORT} (storage: ${store.kind})`));
-  if (!process.env.STAFF_PASSWORD || !process.env.ADMIN_PASSWORD) console.warn('WARNING: STAFF_PASSWORD / ADMIN_PASSWORD not set — using default test passwords "staff" / "admin".');
+  console.log(`Stations: ${STATIONS.length ? STATIONS.map(x => x.name).join(', ') : 'single staff password'}`);
+  if (!process.env.ADMIN_PASSWORD) console.warn('WARNING: ADMIN_PASSWORD not set — using default test password "admin".');
 }).catch(e => { console.error('Failed to start', e); process.exit(1); });
