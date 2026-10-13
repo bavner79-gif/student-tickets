@@ -132,6 +132,19 @@ async function lookup(key, raw) {
   if (s.status === 'notfound' && !TOUCH) slotEl(key).querySelector('[data-h]')?.focus();
 }
 
+// Only these columns are shown for verification at the station, in this order.
+const SHOWN = ['שם פרטי', 'שם משפחה', 'אימייל פנימי', 'אימייל חיצוני', 'טלפון סלולארי', 'שנת לימוד'];
+const normH = h => String(h || '').replace(/["״׳']/g, '').replace(/\s+/g, ' ').trim();
+function shownFields(all) {
+  const out = [];
+  for (const want of SHOWN) {
+    const w = normH(want);
+    const f = all.find(([h]) => normH(h) === w) || all.find(([h]) => normH(h).startsWith(w));
+    if (f) out.push([f[0], f[1] || '—']);
+  }
+  return out;
+}
+
 const IDLE_HTML = () => `<button type="button" class="idle cam-start" data-cam>${CAM_SVG(44)}<strong>ממתין לסריקה</strong><span>לחצו כאן לסריקת הברקוד במצלמה, או הקלידו מספר זהות למעלה</span></button>`;
 const verdict = (cls, mark, title, sub) => `<div class="verdict ${cls}"><div class="mark" aria-hidden="true">${mark}</div><div><h2>${title}</h2>${sub ? `<p>${sub}</p>` : ''}</div></div>`;
 
@@ -151,7 +164,7 @@ function renderSlot(s) {
     : s.dup ? verdict('v-bad', '✕', 'כבר נוסף לרכישה הזו', 'אותו אדם מופיע פעמיים. הסירו את השורה הזו.')
     : st.manual ? verdict('v-ok', '✓', s.justAdded ? 'נוסף למאגר' : 'נמצא במאגר', 'נוסף ידנית בעמדה · שנת לימוד 0')
     : verdict('v-ok', '✓', 'נמצא במאגר', 'אמתו את הפרטים מול התעודה');
-  const fields = st.fields.filter(([, val]) => val).map(([h, val]) =>
+  const fields = shownFields(st.fields).map(([h, val]) =>
     `<div><span>${esc(h)}</span><b class="${/@/.test(val) ? 'email' : /^[\d\-+ ()]+$/.test(val) ? 'mono' : ''}">${esc(val)}</b></div>`).join('');
   out.innerHTML = `<div class="card">${v}<p class="name">${esc(st.name)}</p>
     <div class="details"><div><span>מספר זהות</span><b class="mono">${esc(st.idDisplay || st.id)}</b></div>${fields}</div></div>`;
