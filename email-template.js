@@ -4,8 +4,8 @@ const path = require('path');
 
 const EVENT = process.env.EVENT_NAME || 'מסיבת פתיחת שנה';
 const SUPPORT = process.env.SUPPORT_EMAIL || 'info@reichman-u.com';
-const NOTE_HE = 'הכרטיס אישי ואינו ניתן להעברה – יישלח עד 48 שעות לפני האירוע.';
-const NOTE_EN = 'The ticket is personal and non-transferable – it will be sent no later than 48 hours before the event.';
+const NOTE_HE = 'כרטיס הכניסה יישלח עד 48 שעות לפני האירוע – הכרטיס הינו אישי ולא ניתן להעברה';
+const NOTE_EN = 'The ticket will be sent up to 48 hours before the event - The ticket is personal and non-transferable';
 const SUBJECT = process.env.MAIL_SUBJECT || 'אישור רכישת כרטיס/ים מסיבת פתיחת שנה';
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
