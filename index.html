@@ -174,6 +174,7 @@ function notFoundHtml(s) {
   const kind = h => /מייל|דוא"?ל|e-?mail/i.test(h) ? 'email' : /טלפון|נייד|phone|mobile/i.test(h) ? 'tel' : 'text';
   const inputs = (fieldsCache || []).map((f, i) => {
     const k = kind(f.header), id = `nf${s.key}-${i}`;
+    if (f.gender) return `<div class="field"><label for="${id}">${esc(f.header)}</label><select id="${id}" data-h="${esc(f.header)}"><option value="">—</option><option value="ז">ז (זכר)</option><option value="נ">נ (נקבה)</option></select></div>`;
     return f.year
       ? `<div class="field"><label for="${id}">${esc(f.header)}</label><input id="${id}" value="0" readonly class="mono locked"></div>`
       : `<div class="field"><label for="${id}">${esc(f.header)}</label><input id="${id}" data-h="${esc(f.header)}" type="${k}"${k === 'text' ? '' : ' dir="ltr"'}${k === 'tel' ? ' inputmode="tel"' : ''} autocomplete="off"></div>`;

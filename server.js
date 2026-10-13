@@ -279,12 +279,23 @@ async function sendConfirmations(firstId) {
   if (!r.ok) console.warn('email failed', first.invoice, r.error);
 }
 
+// The "add new person" form shows only these columns (in this order), when they exist in the uploaded file.
+// Study year is always included and fixed at 0.
+const FORM_FIELDS = ['שם פרטי', 'שם משפחה', 'מגדר', 'אימייל פנימי', 'אימייל חיצוני', 'טלפון סלולארי', 'שנת לימוד'];
+const normH = h => String(h || '').replace(/["״׳']/g, '').replace(/\s+/g, ' ').trim();
+
 async function newPersonFields() {
   const meta = await store.getMeta('upload');
   let headers = meta && Array.isArray(meta.headers) ? meta.headers : null;
-  if (!headers) { const s = await store.sampleStudent(); headers = s ? s.fields.map(f => f[0]) : ['שם פרטי', 'שם משפחה', 'טלפון סלולארי', 'אימייל חיצוני']; }
-  const out = headers.map(h => ({ header: h, year: YEAR_HEADER.test(h) }));
-  if (!out.some(f => f.year)) out.push({ header: 'שנת לימוד', year: true });
+  if (!headers) { const s = await store.sampleStudent(); headers = s ? s.fields.map(f => f[0]) : FORM_FIELDS; }
+  const out = [];
+  for (const want of FORM_FIELDS) {
+    const w = normH(want);
+    const h = headers.find(x => normH(x) === w) || headers.find(x => normH(x).startsWith(w));
+    const isYear = want === 'שנת לימוד';
+    if (h) out.push({ header: h, year: isYear || YEAR_HEADER.test(h), gender: want === 'מגדר' });
+    else if (isYear) out.push({ header: 'שנת לימוד', year: true });
+  }
   return out;
 }
 
