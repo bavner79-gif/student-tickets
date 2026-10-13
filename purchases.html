@@ -41,7 +41,8 @@ async function load() {
 }
 function render() {
   const t = all.reduce((s, p) => s + p.tickets, 0);
-  $('#kpis').innerHTML = `<div class="kpi"><span>סטודנטים שרכשו</span><b>${all.length}</b></div><div class="kpi"><span>סה"כ כרטיסים</span><b>${t}</b></div>`;
+  const tx = new Set(all.map(p => p.invoice.toLowerCase())).size;
+  $('#kpis').innerHTML = `<div class="kpi"><span>אנשים עם כרטיס</span><b>${all.length}</b></div><div class="kpi"><span>סה"כ כרטיסים</span><b>${t}</b></div><div class="kpi"><span>חשבוניות</span><b>${tx}</b></div>`;
   const q = $('#q').value.trim().toLowerCase();
   const rows = all.filter(p => !q || [p.name, p.studentId, p.invoice, p.station].join(' ').toLowerCase().includes(q));
   const admin = window.me && window.me.role === 'admin';

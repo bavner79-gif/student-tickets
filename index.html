@@ -22,19 +22,25 @@
   </header>
 
   <div id="noList" class="banner warn" hidden>עדיין לא הועלה קובץ סטודנטים. מנהל צריך להעלות אותו בעמוד "ניהול".</div>
-
-  <form class="scan" id="scanForm" autocomplete="off">
-    <label for="scan">סריקת ברקוד או הקלדת מספר זהות</label>
-    <input id="scan" inputmode="numeric" placeholder="מספר זהות">
-    <div class="scan-actions">
-      <button class="btn big cam-btn" type="button" data-cam><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M16.5 8v8"/></svg><span>מצלמה</span></button>
-      <button class="btn primary big" type="submit">חיפוש</button>
-    </div>
-    <div class="hint">בטלפון או טאבלט: לוחצים "מצלמה" ומכוונים לברקוד. סורק ברקוד USB מקליד את המספר ולוחץ Enter לבד. בהקלדה ידנית לוחצים <kbd>Enter</kbd>. <kbd>Esc</kbd> מנקה את המסך.</div>
-  </form>
-
   <div id="saved" class="banner ok" hidden></div>
-  <section id="result"><button type="button" class="idle cam-start" data-cam><svg viewBox="0 0 24 24" width="44" height="44" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M16.5 8v8"/></svg><strong>ממתין לסריקה</strong><span>לחצו כאן לסריקת הברקוד במצלמה, או הקלידו מספר זהות למעלה</span></button></section>
+
+  <div id="slots" class="slots"></div>
+
+  <div class="add-row" id="addRow" hidden>
+    <button class="btn big add-person" type="button" id="addPerson"><span aria-hidden="true">+</span> הוספה</button>
+    <span class="muted">אדם נוסף באותה רכישה, כרטיס אחד לכל אדם</span>
+  </div>
+
+  <section class="card checkout" id="checkout" hidden>
+    <h2 class="checkout-title">רישום רכישה</h2>
+    <ol class="cart" id="cartList"></ol>
+    <form class="buy" id="buyForm" autocomplete="off">
+      <div class="field"><label for="invoice">מספר חשבונית</label><input id="invoice" class="mono" dir="ltr" required></div>
+      <button class="btn ok big" type="submit" id="saveBtn">שמירה</button>
+      <button class="btn big" type="button" id="cancelAll">ביטול הרכישה</button>
+      <p class="msg" id="buyMsg" hidden></p>
+    </form>
+  </section>
 </div>
 <div class="cam-overlay" id="camOverlay" hidden role="dialog" aria-modal="true" aria-label="סריקה במצלמה">
   <div class="cam-box">
@@ -47,131 +53,204 @@
 <div class="toast" id="toast" hidden></div>
 <script src="/static/common.js"></script>
 <script>
-let current = null;
-const IDLE = '<button type="button" class="idle cam-start" data-cam><svg viewBox="0 0 24 24" width="44" height="44" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M16.5 8v8"/></svg><strong>ממתין לסריקה</strong><span>לחצו כאן לסריקת הברקוד במצלמה, או הקלידו מספר זהות למעלה</span></button>';
+const CAM_SVG = (n) => `<svg viewBox="0 0 24 24" width="ICON" height="ICON" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M16.5 8v8"/></svg>`.replace(/ICON/g, n);
 const TOUCH = matchMedia('(pointer: coarse)').matches;
-const focusScan = () => { if (!TOUCH) $('#scan').focus(); };
-focusScan();
+let slots = [], seq = 0, activeKey = null, fieldsCache = null;
 
 document.addEventListener('me', e => { $('#noList').hidden = e.detail.students > 0; });
 
-function reset(keepSaved) {
-  current = null; $('#result').innerHTML = IDLE; $('#scan').value = ''; focusScan();
-  if (!keepSaved) $('#saved').hidden = true;
+/* ---------- slots: one per person in this purchase ---------- */
+const slotEl = key => document.querySelector(`.slot[data-key="${key}"]`);
+const slotOf = key => slots.find(s => s.key === key);
+const inCart = s => s.status === 'found' && !s.purchase && !s.dup;
+
+function addSlot() {
+  const s = { key: ++seq, status: 'idle' };
+  slots.push(s);
+  const el = document.createElement('section');
+  el.className = 'slot'; el.dataset.key = s.key;
+  el.innerHTML = `
+    <div class="slot-head"><h2 class="slot-title"></h2><button type="button" class="btn slot-remove" data-remove>הסרה</button></div>
+    <form class="scan" autocomplete="off">
+      <label for="scan${s.key}">סריקת ברקוד או הקלדת מספר זהות</label>
+      <input id="scan${s.key}" class="scan-input" inputmode="numeric" placeholder="מספר זהות">
+      <div class="scan-actions">
+        <button class="btn big cam-btn" type="button" data-cam>${CAM_SVG(26)}<span>מצלמה</span></button>
+        <button class="btn primary big" type="submit">חיפוש</button>
+      </div>
+    </form>
+    <div class="slot-result"></div>`;
+  $('#slots').appendChild(el);
+  el.querySelector('form.scan').addEventListener('submit', e => { e.preventDefault(); lookup(s.key, el.querySelector('.scan-input').value); });
+  el.querySelector('.scan-input').addEventListener('focus', () => { activeKey = s.key; });
+  activeKey = s.key;
+  renderSlot(s); refresh();
+  return s;
 }
 
-async function lookup(raw) {
+function removeSlot(key) {
+  const i = slots.findIndex(s => s.key === key);
+  if (i < 0) return;
+  if (slots.length === 1) { resetAll(); return; }
+  slots.splice(i, 1); slotEl(key).remove();
+  markDuplicates(); slots.forEach(renderSlot); refresh();
+  activeKey = slots[slots.length - 1].key;
+}
+
+function resetAll() {
+  slots = []; $('#slots').innerHTML = ''; $('#invoice').value = ''; $('#buyMsg').hidden = true;
+  const s = addSlot(); focusSlot(s.key);
+}
+
+function focusSlot(key) { if (!TOUCH) slotEl(key)?.querySelector('.scan-input').focus(); }
+
+function markDuplicates() {
+  const seen = new Set();
+  for (const s of slots) {
+    s.dup = false;
+    if (s.status !== 'found') continue;
+    if (seen.has(s.student.id)) s.dup = true; else seen.add(s.student.id);
+  }
+}
+
+async function lookup(key, raw) {
+  const s = slotOf(key); if (!s) return;
   const id = String(raw).replace(/\D/g, '');
   if (!id) return;
   $('#saved').hidden = true;
-  $('#result').innerHTML = '<div class="idle"><strong>מחפש…</strong></div>';
+  slotEl(key).querySelector('.scan-input').value = id;
+  Object.assign(s, { status: 'loading', query: id, student: null, purchase: null, justAdded: false });
+  renderSlot(s); refresh();
   try {
-    const { student, purchase } = await api('/api/student/' + encodeURIComponent(id));
-    current = { student, purchase };
-    render();
+    const r = await api('/api/student/' + encodeURIComponent(id));
+    Object.assign(s, { status: 'found', student: r.student, purchase: r.purchase });
   } catch (e) {
-    if (e.status === 404) { await showNotFound(id); return; }
-    $('#result').innerHTML = IDLE; toast(e.message);
+    if (e.status === 404) { s.status = 'notfound'; if (!fieldsCache) { try { fieldsCache = (await api('/api/fields')).fields; } catch { fieldsCache = []; } } }
+    else { s.status = 'idle'; toast(e.message); }
   }
-  if (!TOUCH) $('#scan').select();
+  markDuplicates(); slots.forEach(renderSlot); refresh();
+  if (s.status === 'notfound' && !TOUCH) slotEl(key).querySelector('[data-h]')?.focus();
 }
 
-async function showNotFound(id) {
-  let fields = [];
-  try { fields = (await api('/api/fields')).fields; } catch {}
+const IDLE_HTML = () => `<button type="button" class="idle cam-start" data-cam>${CAM_SVG(44)}<strong>ממתין לסריקה</strong><span>לחצו כאן לסריקת הברקוד במצלמה, או הקלידו מספר זהות למעלה</span></button>`;
+const verdict = (cls, mark, title, sub) => `<div class="verdict ${cls}"><div class="mark" aria-hidden="true">${mark}</div><div><h2>${title}</h2>${sub ? `<p>${sub}</p>` : ''}</div></div>`;
+
+function renderSlot(s) {
+  const el = slotEl(s.key); if (!el) return;
+  const n = slots.indexOf(s) + 1;
+  el.querySelector('.slot-title').textContent = slots.length > 1 ? `אדם ${n} · איתור סטודנט` : 'איתור סטודנט';
+  const rm = el.querySelector('[data-remove]');
+  rm.hidden = slots.length === 1 && s.status === 'idle';
+  rm.textContent = slots.length === 1 ? 'ניקוי' : 'הסרה';
+  const out = el.querySelector('.slot-result');
+  if (s.status === 'idle') { out.innerHTML = IDLE_HTML(); return; }
+  if (s.status === 'loading') { out.innerHTML = '<div class="idle"><strong>מחפש…</strong></div>'; return; }
+  if (s.status === 'notfound') { out.innerHTML = notFoundHtml(s); bindAddForm(s); return; }
+  const st = s.student, p = s.purchase;
+  const v = p ? verdict('v-warn', '!', 'כבר רכש כרטיס', `חשבונית <span class="mono">${esc(p.invoice)}</span> · ${fmtTime(p.updatedAt)}${p.station ? ' · ' + esc(p.station) : ''} · לא ייכלל ברכישה הזו`)
+    : s.dup ? verdict('v-bad', '✕', 'כבר נוסף לרכישה הזו', 'אותו אדם מופיע פעמיים. הסירו את השורה הזו.')
+    : st.manual ? verdict('v-ok', '✓', s.justAdded ? 'נוסף למאגר' : 'נמצא במאגר', 'נוסף ידנית בעמדה · שנת לימוד 0')
+    : verdict('v-ok', '✓', 'נמצא במאגר', 'אמתו את הפרטים מול התעודה');
+  const fields = st.fields.filter(([, val]) => val).map(([h, val]) =>
+    `<div><span>${esc(h)}</span><b class="${/@/.test(val) ? 'email' : /^[\d\-+ ()]+$/.test(val) ? 'mono' : ''}">${esc(val)}</b></div>`).join('');
+  out.innerHTML = `<div class="card">${v}<p class="name">${esc(st.name)}</p>
+    <div class="details"><div><span>מספר זהות</span><b class="mono">${esc(st.idDisplay || st.id)}</b></div>${fields}</div></div>`;
+}
+
+function notFoundHtml(s) {
   const kind = h => /מייל|דוא"?ל|e-?mail/i.test(h) ? 'email' : /טלפון|נייד|phone|mobile/i.test(h) ? 'tel' : 'text';
-  const inputs = fields.map((f, i) => {
-    const k = kind(f.header), dir = k === 'text' ? '' : ' dir="ltr"';
+  const inputs = (fieldsCache || []).map((f, i) => {
+    const k = kind(f.header), id = `nf${s.key}-${i}`;
     return f.year
-      ? `<div class="field"><label for="nf${i}">${esc(f.header)}</label><input id="nf${i}" value="0" readonly class="mono locked"></div>`
-      : `<div class="field"><label for="nf${i}">${esc(f.header)}</label><input id="nf${i}" data-h="${esc(f.header)}" type="${k}"${dir}${k === 'tel' ? ' inputmode="tel"' : ''} autocomplete="off"></div>`;
+      ? `<div class="field"><label for="${id}">${esc(f.header)}</label><input id="${id}" value="0" readonly class="mono locked"></div>`
+      : `<div class="field"><label for="${id}">${esc(f.header)}</label><input id="${id}" data-h="${esc(f.header)}" type="${k}"${k === 'text' ? '' : ' dir="ltr"'}${k === 'tel' ? ' inputmode="tel"' : ''} autocomplete="off"></div>`;
   }).join('');
-  $('#result').innerHTML = `<div class="card">
-    <div class="verdict v-bad"><div class="mark" aria-hidden="true">✕</div><div><h2>לא נמצא במאגר</h2><p>מספר זהות <span class="mono">${esc(id)}</span> לא מופיע ברשימת הסטודנטים</p></div></div>
+  return `<div class="card">
+    ${verdict('v-bad', '✕', 'לא נמצא במאגר', `מספר זהות <span class="mono">${esc(s.query)}</span> לא מופיע ברשימת הסטודנטים`)}
     <p class="muted" style="margin:0">בדקו שהמספר נכון. אם צריך, אפשר להוסיף את האדם למאגר כאן. הוא יירשם עם שנת לימוד 0.</p>
-    <form class="buy addform" id="addForm" autocomplete="off" novalidate>
+    <form class="buy addform" autocomplete="off" novalidate>
       <h3>הוספת אדם חדש למאגר</h3>
-      <div class="field"><label for="nfId">מספר זהות</label><input id="nfId" class="mono" inputmode="numeric" value="${esc(id)}" dir="ltr"></div>
+      <div class="field"><label for="nfid${s.key}">מספר זהות</label><input id="nfid${s.key}" class="mono nf-id" inputmode="numeric" value="${esc(s.query)}" dir="ltr"></div>
       ${inputs}
-      <div class="add-actions">
-        <button class="btn ok big" type="submit" id="addBtn">שמירה והמשך לרכישה</button>
-        <button class="btn big" type="button" id="addCancel">ביטול</button>
-      </div>
-      <p class="msg err" id="addMsg" hidden></p>
+      <div class="add-actions"><button class="btn ok big" type="submit">שמירה במאגר</button></div>
+      <p class="msg err" hidden></p>
     </form></div>`;
-  $('#addCancel').addEventListener('click', () => reset());
-  $('#addForm').addEventListener('submit', async ev => {
+}
+
+function bindAddForm(s) {
+  const form = slotEl(s.key).querySelector('form.addform');
+  form.addEventListener('submit', async ev => {
     ev.preventDefault();
-    const msg = $('#addMsg'); msg.hidden = true;
-    const vals = {}; document.querySelectorAll('#addForm [data-h]').forEach(el => { vals[el.dataset.h] = el.value.trim(); });
-    const newId = $('#nfId').value.replace(/\D/g, '');
+    const msg = form.querySelector('.msg'), btn = form.querySelector('button[type=submit]'); msg.hidden = true;
+    const vals = {}; form.querySelectorAll('[data-h]').forEach(el => { vals[el.dataset.h] = el.value.trim(); });
+    const newId = form.querySelector('.nf-id').value.replace(/\D/g, '');
     const nameKeys = Object.keys(vals).filter(h => /שם/.test(h) || /name/i.test(h));
-    if (!newId) { msg.textContent = 'הזינו מספר זהות'; msg.hidden = false; $('#nfId').focus(); return; }
-    if (nameKeys.length && nameKeys.every(h => !vals[h])) { msg.textContent = 'הזינו שם'; msg.hidden = false; document.querySelector('#addForm [data-h="' + CSS.escape(nameKeys[0]) + '"]').focus(); return; }
-    const bad = [...document.querySelectorAll('#addForm input[type=email]')].find(el => el.value && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(el.value));
-    if (bad) { msg.textContent = 'כתובת המייל לא תקינה'; msg.hidden = false; bad.focus(); return; }
-    $('#addBtn').disabled = true;
+    const fail = (t, el) => { msg.textContent = t; msg.hidden = false; el?.focus(); };
+    if (!newId) return fail('הזינו מספר זהות', form.querySelector('.nf-id'));
+    if (nameKeys.length && nameKeys.every(h => !vals[h])) return fail('הזינו שם', form.querySelector(`[data-h="${CSS.escape(nameKeys[0])}"]`));
+    const bad = [...form.querySelectorAll('input[type=email]')].find(el => el.value && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(el.value));
+    if (bad) return fail('כתובת המייל לא תקינה', bad);
+    btn.disabled = true;
     try {
       const r = await api('/api/student', { method: 'POST', body: JSON.stringify({ id: newId, fields: vals, station: station.get() }) });
-      current = { student: r.student, purchase: null, justAdded: true };
-      $('#scan').value = newId;
-      render();
+      Object.assign(s, { status: 'found', student: r.student, purchase: null, justAdded: true, query: newId });
+      slotEl(s.key).querySelector('.scan-input').value = newId;
+      markDuplicates(); slots.forEach(renderSlot); refresh();
       toast('נוסף למאגר: ' + r.student.name);
-      document.getElementById('tickets')?.focus();
-    } catch (err) { $('#addBtn').disabled = false; msg.textContent = err.message; msg.hidden = false; }
+    } catch (err) { btn.disabled = false; fail(err.message); }
   });
-  if (!TOUCH) document.querySelector('#addForm [data-h]')?.focus();
 }
 
-function render() {
-  const { student: s, purchase: p } = current;
-  const verdict = p
-    ? `<div class="verdict v-warn"><div class="mark" aria-hidden="true">!</div><div><h2>כבר רכש ${p.tickets} כרטיסים</h2><p>חשבונית <span class="mono">${esc(p.invoice)}</span> · ${fmtTime(p.updatedAt)}${p.station ? ' · ' + esc(p.station) : ''}</p></div></div>`
-    : s.manual
-      ? `<div class="verdict v-ok"><div class="mark" aria-hidden="true">✓</div><div><h2>${current.justAdded ? 'נוסף למאגר' : 'נמצא במאגר'}</h2><p>נוסף ידנית בעמדה · שנת לימוד 0</p></div></div>`
-      : `<div class="verdict v-ok"><div class="mark" aria-hidden="true">✓</div><div><h2>נמצא במאגר</h2><p>אמתו את הפרטים מול התעודה</p></div></div>`;
-  const fields = s.fields.filter(([, v]) => v).map(([h, v]) =>
-    `<div><span>${esc(h)}</span><b class="${/@/.test(v) ? 'email' : /^[\d\-+ ()]+$/.test(v) ? 'mono' : ''}">${esc(v)}</b></div>`).join('');
-  const opts = [1, 2, 3, 4, 5].map(n => `<option value="${n}" ${p && p.tickets === n ? 'selected' : ''}>${n}</option>`).join('');
-  $('#result').innerHTML = `<div class="card">
-    ${verdict}
-    <p class="name">${esc(s.name)}</p>
-    <div class="details"><div><span>מספר זהות</span><b class="mono">${esc(s.idDisplay || s.id)}</b></div>${fields}</div>
-    <form class="buy" id="buyForm" autocomplete="off">
-      <h3>${p ? 'עדכון רכישה קיימת' : 'רישום רכישה'}</h3>
-      <div class="field"><label for="tickets">מספר כרטיסים שנרכשו</label>
-        <select id="tickets" required><option value="" ${p ? '' : 'selected'} disabled>בחרו</option>${opts}</select></div>
-      <div class="field"><label for="invoice">מספר חשבונית</label>
-        <input id="invoice" class="mono" value="${p ? esc(p.invoice) : ''}" required></div>
-      <button class="btn ok big" type="submit" id="saveBtn">${p ? 'שמירת עדכון' : 'שמירה'}</button>
-      <p class="msg" id="buyMsg" hidden></p>
-    </form></div>`;
-  $('#buyForm').addEventListener('submit', ev => { ev.preventDefault(); save(false); });
+/* ---------- add-person button + checkout ---------- */
+function refresh() {
+  const cart = slots.filter(inCart);
+  const last = slots[slots.length - 1];
+  const lastDone = last && (last.status === 'found');
+  $('#addRow').hidden = !(cart.length && lastDone);
+  $('#checkout').hidden = !cart.length;
+  $('#cartList').innerHTML = cart.map(s => `<li><span>${esc(s.student.name)}</span><span class="mono">${esc(s.student.idDisplay || s.student.id)}</span><span class="pill-t">כרטיס 1</span></li>`).join('');
+  const blocked = slots.some(s => s.status === 'found' && (s.purchase || s.dup)) || slots.some(s => s.status === 'notfound' || s.status === 'loading');
+  $('#saveBtn').textContent = cart.length > 1 ? `שמירה · ${cart.length} כרטיסים` : 'שמירה · כרטיס 1';
+  $('.checkout-title').textContent = `רישום רכישה · ${cart.length} ${cart.length === 1 ? 'אדם' : 'אנשים'}`;
+  $('#checkout').classList.toggle('has-blocked', blocked);
 }
 
+$('#addPerson').addEventListener('click', () => {
+  const s = addSlot();
+  slotEl(s.key).scrollIntoView({ behavior: 'smooth', block: 'start' });
+  focusSlot(s.key);
+});
+$('#cancelAll').addEventListener('click', () => { $('#saved').hidden = true; resetAll(); window.scrollTo({ top: 0 }); });
+
+$('#buyForm').addEventListener('submit', ev => { ev.preventDefault(); save(false); });
 async function save(force) {
-  const tickets = $('#tickets').value, invoice = $('#invoice').value.trim(), msg = $('#buyMsg');
-  msg.hidden = true;
-  if (!tickets) { msg.className = 'msg err'; msg.textContent = 'בחרו מספר כרטיסים'; msg.hidden = false; $('#tickets').focus(); return; }
-  if (!invoice) { msg.className = 'msg err'; msg.textContent = 'הזינו מספר חשבונית'; msg.hidden = false; $('#invoice').focus(); return; }
+  const msg = $('#buyMsg'), invoice = $('#invoice').value.trim(); msg.hidden = true;
+  const cart = slots.filter(inCart);
+  const err = (t, cls = 'err') => { msg.className = 'msg ' + cls; msg.innerHTML = t; msg.hidden = false; };
+  if (slots.some(s => s.status === 'notfound')) return err('יש אדם שלא נמצא במאגר. הוסיפו אותו או הסירו את השורה.');
+  if (slots.some(s => s.status === 'idle' || s.status === 'loading')) return err('יש שורת איתור ריקה. חפשו אדם או הסירו את השורה.');
+  if (slots.some(s => s.dup)) return err('אותו אדם מופיע פעמיים. הסירו את השורה הכפולה.');
+  if (slots.some(s => s.purchase)) return err('יש אדם שכבר רכש כרטיס. הסירו אותו מהרכישה.');
+  if (!cart.length) return;
+  if (!invoice) { err('הזינו מספר חשבונית'); $('#invoice').focus(); return; }
   $('#saveBtn').disabled = true;
   try {
-    const r = await api('/api/purchase', { method: 'POST', body: JSON.stringify({ studentId: current.student.id, tickets, invoice, station: station.get(), force }) });
-    $('#saved').textContent = `✓ ${r.updated ? 'עודכן' : 'נשמר'}: ${current.student.name} · ${r.purchase.tickets} כרטיסים · חשבונית ${r.purchase.invoice}`;
+    const r = await api('/api/purchases', { method: 'POST', body: JSON.stringify({ studentIds: cart.map(s => s.student.id), invoice, station: station.get(), force }) });
+    $('#saved').innerHTML = `✓ נשמר · חשבונית <span class="mono">${esc(r.invoice)}</span> · ${r.saved.length} ${r.saved.length === 1 ? 'כרטיס' : 'כרטיסים'}: ${r.saved.map(p => esc(p.name)).join(', ')}`;
     $('#saved').hidden = false;
-    reset(true);
+    resetAll(); window.scrollTo({ top: 0 });
   } catch (e) {
-    $('#saveBtn').disabled = false;
-    msg.className = 'msg ' + (e.data && e.data.duplicateInvoice ? 'warn' : 'err');
-    msg.innerHTML = esc(e.message) + (e.data && e.data.duplicateInvoice ? ' <button type="button" class="btn" id="forceBtn">לשמור בכל זאת</button>' : '');
-    msg.hidden = false;
-    const f = $('#forceBtn'); if (f) f.addEventListener('click', () => save(true));
-  }
+    if (e.data && e.data.duplicateInvoice) {
+      err(esc(e.message) + ' <button type="button" class="btn" id="forceBtn">לשמור בכל זאת</button>', 'warn');
+      $('#forceBtn').addEventListener('click', () => save(true));
+    } else err(esc(e.message));
+    if (e.data && e.data.taken) { for (const s of slots) if (s.student && e.data.taken.includes(s.student.id)) { s.purchase = { invoice: '?', updatedAt: new Date() }; } slots.forEach(renderSlot); refresh(); }
+  } finally { $('#saveBtn').disabled = false; }
 }
 
 /* ---------- camera scanning ---------- */
 const SCAN_LIB = 'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js';
-let libPromise = null, scanner = null, handled = false;
+let libPromise = null, scanner = null, handled = false, camTarget = null;
 function loadLib() {
   if (window.Html5Qrcode) return Promise.resolve();
   return libPromise ||= new Promise((ok, fail) => {
@@ -179,7 +258,8 @@ function loadLib() {
     sc.onerror = () => { libPromise = null; fail(new Error('lib')); }; document.head.appendChild(sc);
   });
 }
-async function openCamera() {
+async function openCamera(key) {
+  camTarget = key;
   $('#camOverlay').hidden = false; $('#camMsg').textContent = 'מפעיל מצלמה…'; handled = false;
   try {
     await loadLib();
@@ -213,19 +293,27 @@ async function onCode(text) {
   handled = true;
   try { navigator.vibrate && navigator.vibrate(80); } catch {}
   await closeCamera();
-  $('#scan').value = id;
-  lookup(id);
+  lookup(camTarget, id);
 }
-document.addEventListener('click', e => { if (e.target.closest('[data-cam]')) openCamera(); });
+document.addEventListener('click', e => {
+  const cam = e.target.closest('[data-cam]');
+  if (cam) { const sl = cam.closest('.slot'); openCamera(sl ? +sl.dataset.key : activeKey); return; }
+  const rm = e.target.closest('[data-remove]');
+  if (rm) removeSlot(+rm.closest('.slot').dataset.key);
+});
 $('#camClose').addEventListener('click', closeCamera);
 
-$('#scanForm').addEventListener('submit', e => { e.preventDefault(); lookup($('#scan').value); });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { if (!$('#camOverlay').hidden) { closeCamera(); return; } reset(); return; }
-  // a scanner "types" digits — catch them even when focus is elsewhere
+  if (e.key === 'Escape' && !$('#camOverlay').hidden) { closeCamera(); return; }
+  // a USB scanner "types" digits — send them to the current search box even when focus is elsewhere
   const tag = document.activeElement && document.activeElement.tagName;
-  if (/^[0-9]$/.test(e.key) && !['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) { $('#scan').value = ''; $('#scan').focus(); }
+  if (/^[0-9]$/.test(e.key) && !['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) {
+    const target = [...slots].reverse().find(s => s.status === 'idle') || slotOf(activeKey) || slots[slots.length - 1];
+    const inp = slotEl(target.key).querySelector('.scan-input'); inp.value = ''; inp.focus();
+  }
 });
+
+resetAll();
 </script>
 </body>
 </html>

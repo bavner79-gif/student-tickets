@@ -134,6 +134,34 @@ async function api(req, res, url, s) {
     return json(res, 200, { purchase, updated: !!prev });
   }
 
+  // One transaction: several people, one ticket each, one shared invoice number.
+  if (route === 'POST /api/purchases') {
+    const b = await readBody(req, 20000);
+    const ids = [...new Set((Array.isArray(b.studentIds) ? b.studentIds : []).map(normId).filter(Boolean))];
+    const invoice = String(b.invoice || '').trim(), station = String(b.station || '').trim().slice(0, 60);
+    if (!ids.length) return json(res, 400, { error: 'אין אנשים ברכישה' });
+    if (ids.length > 30) return json(res, 400, { error: 'יותר מדי אנשים ברכישה אחת' });
+    if (!invoice) return json(res, 400, { error: 'יש להזין מספר חשבונית' });
+    if (invoice.length > 60) return json(res, 400, { error: 'מספר החשבונית ארוך מדי' });
+    const people = [];
+    for (const id of ids) {
+      const st = await store.getStudent(id);
+      if (!st) return json(res, 404, { error: `מספר זהות ${id} לא נמצא במאגר` });
+      people.push(st);
+    }
+    const clash = (await store.findInvoice(invoice)).filter(p => !ids.includes(p.studentId));
+    if (clash.length && !b.force) {
+      const other = await store.getStudent(clash[0].studentId);
+      return json(res, 409, { error: `מספר החשבונית ${invoice} כבר רשום אצל ${other ? other.name : clash[0].studentId}`, duplicateInvoice: true });
+    }
+    const { taken } = await store.savePurchaseBatch(ids, invoice, station);
+    if (taken.length) {
+      const names = people.filter(p => taken.includes(p.id)).map(p => p.name).join(', ');
+      return json(res, 409, { error: `כבר נרשם כרטיס עבור: ${names}. הסירו אותם מהרכישה ונסו שוב.`, taken });
+    }
+    return json(res, 200, { saved: people.map(p => ({ id: p.id, name: p.name })), invoice });
+  }
+
   if (route === 'GET /api/purchases') {
     const list = await store.listPurchases();
     return json(res, 200, { purchases: list.map(p => ({ studentId: p.studentId, tickets: p.tickets, invoice: p.invoice, station: p.station, createdAt: p.createdAt, updatedAt: p.updatedAt, name: p.student ? p.student.name : '(לא במאגר)' })) });

@@ -74,6 +74,22 @@ function createPgStore(url) {
       await q(`INSERT INTO purchase_log(student_id,action,tickets,invoice,station) VALUES($1,$2,$3,$4,$5)`, [p.studentId, action, p.tickets, p.invoice, p.station]);
       return this.getPurchase(p.studentId);
     },
+    // Save several one-ticket purchases under one invoice; all or nothing.
+    async savePurchaseBatch(ids, invoice, station) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const taken = [];
+        for (const id of ids) {
+          const r = await client.query(`INSERT INTO purchases(student_id,tickets,invoice,station) VALUES($1,1,$2,$3) ON CONFLICT(student_id) DO NOTHING RETURNING student_id`, [id, invoice, station]);
+          if (!r.rowCount) taken.push(id);
+        }
+        if (taken.length) { await client.query('ROLLBACK'); return { taken }; }
+        for (const id of ids) await client.query(`INSERT INTO purchase_log(student_id,action,tickets,invoice,station) VALUES($1,'create',1,$2,$3)`, [id, invoice, station]);
+        await client.query('COMMIT');
+        return { taken: [] };
+      } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; } finally { client.release(); }
+    },
     async deletePurchase(id) {
       const p = await this.getPurchase(id);
       await q(`DELETE FROM purchases WHERE student_id=$1`, [id]);
@@ -121,6 +137,16 @@ function createFileStore(file) {
       db.purchases[p.studentId] = { ...p, createdAt: prev ? prev.createdAt : now, updatedAt: now };
       db.log.push({ student_id: p.studentId, action, tickets: p.tickets, invoice: p.invoice, station: p.station, at: now });
       save(); return db.purchases[p.studentId];
+    },
+    async savePurchaseBatch(ids, invoice, station) {
+      const taken = ids.filter(id => db.purchases[id]);
+      if (taken.length) return { taken };
+      const now = new Date().toISOString();
+      for (const id of ids) {
+        db.purchases[id] = { studentId: id, tickets: 1, invoice, station, createdAt: now, updatedAt: now };
+        db.log.push({ student_id: id, action: 'create', tickets: 1, invoice, station, at: now });
+      }
+      save(); return { taken: [] };
     },
     async deletePurchase(id) {
       const p = db.purchases[id];
