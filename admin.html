@@ -29,7 +29,7 @@
       <label class="btn primary" for="file">בחירת קובץ</label>
       <input type="file" id="file" accept=".xlsx,.xls,.csv" hidden>
     </div>
-    <p class="muted" style="margin:0">העלאה של קובץ חדש מחליפה את רשימת הסטודנטים. רכישות שכבר נרשמו נשמרות.</p>
+    <p class="muted" style="margin:0">העלאה של קובץ חדש מחליפה את רשימת הסטודנטים. רכישות שכבר נרשמו ואנשים שנוספו ידנית בעמדות נשמרים.</p>
   </section>
 
   <section class="card">
@@ -46,7 +46,7 @@
 function showInfo(me) {
   const u = me.upload;
   $('#info').innerHTML = me.students
-    ? `במאגר <b>${me.students.toLocaleString('he-IL')}</b> סטודנטים${u ? ` · מהקובץ <b>${esc(u.file)}</b> · הועלה ${fmtTime(u.at)}` : ''}`
+    ? `במאגר <b>${me.students.toLocaleString('he-IL')}</b> אנשים${u ? ` · מהקובץ <b>${esc(u.file)}</b> · הועלה ${fmtTime(u.at)}` : ''}${me.manual ? ` · <b>${me.manual}</b> נוספו ידנית בעמדות` : ''}`
     : 'עדיין לא הועלה קובץ.';
 }
 document.addEventListener('me', e => showInfo(e.detail));

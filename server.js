@@ -16,6 +16,7 @@ const store = createStore();
 
 /* ---------------- helpers ---------------- */
 const normId = v => String(v ?? '').replace(/\D/g, '').replace(/^0+/, '');
+const YEAR_HEADER = /שנת?\s*לימוד|^שנה$|^year$|study\s*year/i;
 const ID_HEADER = /^(מ["״']?ז|ת["״'.]?\s*ז|תעודת\s*זהות|מספר\s*זהות|מס['׳]?\s*זהות|id\b|identity)/i;
 
 function send(res, status, body, headers = {}) {
@@ -83,7 +84,27 @@ async function api(req, res, url, s) {
   const admin = s.role === 'admin';
   const needAdmin = () => json(res, 403, { error: 'הפעולה מותרת רק למנהל' });
 
-  if (route === 'GET /api/me') return json(res, 200, { role: s.role, students: await store.countStudents(), upload: await store.getMeta('upload') });
+  if (route === 'GET /api/me') return json(res, 200, { role: s.role, students: await store.countStudents(), manual: await store.countManual(), upload: await store.getMeta('upload') });
+
+  // The columns a manually added person gets: the same columns as the uploaded Excel, plus a study-year column set to 0.
+  if (route === 'GET /api/fields') return json(res, 200, { fields: await newPersonFields() });
+
+  if (route === 'POST /api/student') {
+    const b = await readBody(req, 50000);
+    const id = normId(b.id);
+    if (!id || id.length > 12) return json(res, 400, { error: 'יש להזין מספר זהות תקין' });
+    if (await store.getStudent(id)) return json(res, 409, { error: 'מספר הזהות הזה כבר קיים במאגר' });
+    const cols = await newPersonFields();
+    const vals = b.fields && typeof b.fields === 'object' ? b.fields : {};
+    const fields = cols.map(c => [c.header, c.year ? '0' : String(vals[c.header] ?? '').trim().slice(0, 200)]);
+    const get = re => { const f = fields.find(([h]) => re.test(h)); return f ? f[1] : ''; };
+    const first = get(/שם\s*פרטי|first/i), last = get(/שם\s*משפחה|last|surname/i), full = get(/^שם(\s*מלא)?$|full\s*name|^name$/i);
+    const name = full || [first, last].filter(Boolean).join(' ');
+    if (!name) return json(res, 400, { error: 'יש להזין שם' });
+    const data = { id, idDisplay: String(b.id).trim().slice(0, 20), name, fields, manual: true, addedAt: new Date().toISOString(), addedBy: String(b.station || '').trim().slice(0, 60) };
+    if (!(await store.addStudent({ id, data }))) return json(res, 409, { error: 'מספר הזהות הזה כבר קיים במאגר' });
+    return json(res, 200, { student: data, purchase: null });
+  }
 
   let m;
   if (req.method === 'GET' && (m = /^\/api\/student\/([^/]+)$/.exec(url.pathname))) {
@@ -148,7 +169,8 @@ async function api(req, res, url, s) {
     }
     if (!rows.length) return json(res, 400, { error: 'לא נמצאו שורות עם מספר זהות' });
     await store.replaceStudents(rows);
-    const info = { file: String(b.file || '').slice(0, 200), count: rows.length, dups, noId, at: new Date().toISOString(), idHeader: headers[idCol] };
+    const info = { file: String(b.file || '').slice(0, 200), count: rows.length, dups, noId, at: new Date().toISOString(), idHeader: headers[idCol],
+      headers: headers.filter((h, i) => h && i !== idCol) };
     await store.setMeta('upload', info);
     return json(res, 200, info);
   }
@@ -164,6 +186,15 @@ async function api(req, res, url, s) {
   }
 
   return json(res, 404, { error: 'לא נמצא' });
+}
+
+async function newPersonFields() {
+  const meta = await store.getMeta('upload');
+  let headers = meta && Array.isArray(meta.headers) ? meta.headers : null;
+  if (!headers) { const s = await store.sampleStudent(); headers = s ? s.fields.map(f => f[0]) : ['שם פרטי', 'שם משפחה', 'טלפון סלולארי', 'אימייל חיצוני']; }
+  const out = headers.map(h => ({ header: h, year: YEAR_HEADER.test(h) }));
+  if (!out.some(f => f.year)) out.push({ header: 'שנת לימוד', year: true });
+  return out;
 }
 
 /* ---------------- server ---------------- */

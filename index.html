@@ -70,20 +70,66 @@ async function lookup(raw) {
     current = { student, purchase };
     render();
   } catch (e) {
-    if (e.status === 404) {
-      $('#result').innerHTML = `<div class="card">
-        <div class="verdict v-bad"><div class="mark" aria-hidden="true">✕</div><div><h2>לא נמצא במאגר</h2><p>מספר זהות <span class="mono">${esc(id)}</span> לא מופיע ברשימת הסטודנטים</p></div></div>
-        <p class="muted" style="margin:0">בדקו שהמספר הוקלד נכון ונסו שוב. אם הסטודנט מציג אישור תקף – פנו לאחראי המשמרת.</p></div>`;
-    } else { $('#result').innerHTML = IDLE; toast(e.message); }
+    if (e.status === 404) { await showNotFound(id); return; }
+    $('#result').innerHTML = IDLE; toast(e.message);
   }
   if (!TOUCH) $('#scan').select();
+}
+
+async function showNotFound(id) {
+  let fields = [];
+  try { fields = (await api('/api/fields')).fields; } catch {}
+  const kind = h => /מייל|דוא"?ל|e-?mail/i.test(h) ? 'email' : /טלפון|נייד|phone|mobile/i.test(h) ? 'tel' : 'text';
+  const inputs = fields.map((f, i) => {
+    const k = kind(f.header), dir = k === 'text' ? '' : ' dir="ltr"';
+    return f.year
+      ? `<div class="field"><label for="nf${i}">${esc(f.header)}</label><input id="nf${i}" value="0" readonly class="mono locked"></div>`
+      : `<div class="field"><label for="nf${i}">${esc(f.header)}</label><input id="nf${i}" data-h="${esc(f.header)}" type="${k}"${dir}${k === 'tel' ? ' inputmode="tel"' : ''} autocomplete="off"></div>`;
+  }).join('');
+  $('#result').innerHTML = `<div class="card">
+    <div class="verdict v-bad"><div class="mark" aria-hidden="true">✕</div><div><h2>לא נמצא במאגר</h2><p>מספר זהות <span class="mono">${esc(id)}</span> לא מופיע ברשימת הסטודנטים</p></div></div>
+    <p class="muted" style="margin:0">בדקו שהמספר נכון. אם צריך, אפשר להוסיף את האדם למאגר כאן. הוא יירשם עם שנת לימוד 0.</p>
+    <form class="buy addform" id="addForm" autocomplete="off" novalidate>
+      <h3>הוספת אדם חדש למאגר</h3>
+      <div class="field"><label for="nfId">מספר זהות</label><input id="nfId" class="mono" inputmode="numeric" value="${esc(id)}" dir="ltr"></div>
+      ${inputs}
+      <div class="add-actions">
+        <button class="btn ok big" type="submit" id="addBtn">שמירה והמשך לרכישה</button>
+        <button class="btn big" type="button" id="addCancel">ביטול</button>
+      </div>
+      <p class="msg err" id="addMsg" hidden></p>
+    </form></div>`;
+  $('#addCancel').addEventListener('click', () => reset());
+  $('#addForm').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const msg = $('#addMsg'); msg.hidden = true;
+    const vals = {}; document.querySelectorAll('#addForm [data-h]').forEach(el => { vals[el.dataset.h] = el.value.trim(); });
+    const newId = $('#nfId').value.replace(/\D/g, '');
+    const nameKeys = Object.keys(vals).filter(h => /שם/.test(h) || /name/i.test(h));
+    if (!newId) { msg.textContent = 'הזינו מספר זהות'; msg.hidden = false; $('#nfId').focus(); return; }
+    if (nameKeys.length && nameKeys.every(h => !vals[h])) { msg.textContent = 'הזינו שם'; msg.hidden = false; document.querySelector('#addForm [data-h="' + CSS.escape(nameKeys[0]) + '"]').focus(); return; }
+    const bad = [...document.querySelectorAll('#addForm input[type=email]')].find(el => el.value && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(el.value));
+    if (bad) { msg.textContent = 'כתובת המייל לא תקינה'; msg.hidden = false; bad.focus(); return; }
+    $('#addBtn').disabled = true;
+    try {
+      const r = await api('/api/student', { method: 'POST', body: JSON.stringify({ id: newId, fields: vals, station: station.get() }) });
+      current = { student: r.student, purchase: null, justAdded: true };
+      $('#scan').value = newId;
+      render();
+      toast('נוסף למאגר: ' + r.student.name);
+      document.getElementById('tickets')?.focus();
+    } catch (err) { $('#addBtn').disabled = false; msg.textContent = err.message; msg.hidden = false; }
+  });
+  if (!TOUCH) document.querySelector('#addForm [data-h]')?.focus();
 }
 
 function render() {
   const { student: s, purchase: p } = current;
   const verdict = p
     ? `<div class="verdict v-warn"><div class="mark" aria-hidden="true">!</div><div><h2>כבר רכש ${p.tickets} כרטיסים</h2><p>חשבונית <span class="mono">${esc(p.invoice)}</span> · ${fmtTime(p.updatedAt)}${p.station ? ' · ' + esc(p.station) : ''}</p></div></div>`
-    : `<div class="verdict v-ok"><div class="mark" aria-hidden="true">✓</div><div><h2>נמצא במאגר</h2><p>אמתו את הפרטים מול התעודה</p></div></div>`;
+    : s.manual
+      ? `<div class="verdict v-ok"><div class="mark" aria-hidden="true">✓</div><div><h2>${current.justAdded ? 'נוסף למאגר' : 'נמצא במאגר'}</h2><p>נוסף ידנית בעמדה · שנת לימוד 0</p></div></div>`
+      : `<div class="verdict v-ok"><div class="mark" aria-hidden="true">✓</div><div><h2>נמצא במאגר</h2><p>אמתו את הפרטים מול התעודה</p></div></div>`;
   const fields = s.fields.filter(([, v]) => v).map(([h, v]) =>
     `<div><span>${esc(h)}</span><b class="${/@/.test(v) ? 'email' : /^[\d\-+ ()]+$/.test(v) ? 'mono' : ''}">${esc(v)}</b></div>`).join('');
   const opts = [1, 2, 3, 4, 5].map(n => `<option value="${n}" ${p && p.tickets === n ? 'selected' : ''}>${n}</option>`).join('');

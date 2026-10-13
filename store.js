@@ -34,7 +34,8 @@ function createPgStore(url) {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        await client.query('DELETE FROM students');
+        // keep people added manually at the stations; a row in the new file replaces its manual twin
+        await client.query(`DELETE FROM students WHERE coalesce(data->>'manual','') <> 'true'`);
         for (let i = 0; i < rows.length; i += 500) {
           const chunk = rows.slice(i, i + 500);
           const vals = [], params = [];
@@ -46,6 +47,16 @@ function createPgStore(url) {
     },
     async countStudents() {
       const r = await q(`SELECT count(*)::int AS n FROM students`); return r.rows[0].n;
+    },
+    async countManual() {
+      const r = await q(`SELECT count(*)::int AS n FROM students WHERE data->>'manual'='true'`); return r.rows[0].n;
+    },
+    async sampleStudent() {
+      const r = await q(`SELECT data FROM students WHERE coalesce(data->>'manual','') <> 'true' LIMIT 1`); return r.rows[0] ? r.rows[0].data : null;
+    },
+    async addStudent(row) {
+      const r = await q(`INSERT INTO students(id,data) VALUES($1,$2) ON CONFLICT(id) DO NOTHING RETURNING id`, [row.id, JSON.stringify(row.data)]);
+      return r.rowCount === 1;
     },
     async getStudent(id) {
       const r = await q(`SELECT data FROM students WHERE id=$1`, [id]); return r.rows[0] ? r.rows[0].data : null;
@@ -93,8 +104,14 @@ function createFileStore(file) {
     },
     async getMeta(k) { return db.meta[k] ?? null; },
     async setMeta(k, v) { db.meta[k] = v; save(); },
-    async replaceStudents(rows) { db.students = {}; rows.forEach(r => { db.students[r.id] = r.data; }); save(); },
+    async replaceStudents(rows) {
+      const keep = {}; for (const [id, d] of Object.entries(db.students)) if (d.manual) keep[id] = d;
+      db.students = keep; rows.forEach(r => { db.students[r.id] = r.data; }); save();
+    },
     async countStudents() { return Object.keys(db.students).length; },
+    async countManual() { return Object.values(db.students).filter(d => d.manual).length; },
+    async sampleStudent() { return Object.values(db.students).find(d => !d.manual) || null; },
+    async addStudent(row) { if (db.students[row.id]) return false; db.students[row.id] = row.data; save(); return true; },
     async getStudent(id) { return db.students[id] || null; },
     async getPurchase(id) { return db.purchases[id] || null; },
     async findInvoice(inv) { return Object.values(db.purchases).filter(p => p.invoice.toLowerCase() === inv.toLowerCase()); },
