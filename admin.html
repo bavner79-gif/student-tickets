@@ -61,7 +61,7 @@ function showInfo(me) {
 document.addEventListener('me', e => { showInfo(e.detail); showMail(e.detail.mail || {}); });
 function showMail(m) {
   $('#mailInfo').innerHTML = m.configured
-    ? `מחובר. אישורים יוצאים אוטומטית מהכתובת <b dir="ltr">${esc(m.from)}</b> לכל אדם שנרשם לו כרטיס.`
+    ? `מחובר. אישורים יוצאים אוטומטית מהכתובת <b dir="ltr">${esc(m.from)}</b> לאדם הראשון בכל רכישה, עם מספר הכרטיסים ומספר החשבונית.`
     : 'עדיין לא מחובר. כשתוגדר כתובת Gmail וסיסמת אפליקציה ב-Render, כל רוכש יקבל אישור במייל.';
   $('#mailTest').hidden = !m.configured;
 }

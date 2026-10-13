@@ -94,7 +94,7 @@ async function api(req, res, url, s) {
     if (!mailer.configured()) return json(res, 400, { error: 'המייל עדיין לא מחובר. צריך להגדיר GMAIL_USER ו-GMAIL_APP_PASSWORD ב-Render.' });
     const b = await readBody(req, 5000);
     const to = String(b.to || mailer.from()).trim();
-    const m = confirmationEmail({ name: 'בדיקה', id: '000000000', invoice: 'TEST-1' });
+    const m = confirmationEmail({ name: 'ישראל ישראלי (בדיקה)', count: 2, invoice: 'TEST-1' });
     const [r] = await mailer.sendMany([{ to, ...m, subject: '[בדיקה] ' + m.subject }]);
     return r.ok ? json(res, 200, { ok: true, to }) : json(res, 502, { error: r.error });
   }
@@ -104,7 +104,7 @@ async function api(req, res, url, s) {
     if (!mailer.configured()) return json(res, 400, { error: 'המייל לא מחובר' });
     const id = normId(decodeURIComponent(rm[1]));
     if (!(await store.getPurchase(id))) return json(res, 404, { error: 'רכישה לא נמצאה' });
-    await sendConfirmations([id]);
+    await sendConfirmations(id);
     const p = await store.getPurchase(id);
     return p.emailStatus === 'sent' ? json(res, 200, { ok: true, to: p.emailTo }) : json(res, 502, { error: p.emailStatus === 'no_email' ? 'אין כתובת מייל לאדם הזה' : (p.emailError || 'השליחה נכשלה') });
   }
@@ -177,12 +177,12 @@ async function api(req, res, url, s) {
       const other = await store.getStudent(clash[0].studentId);
       return json(res, 409, { error: `מספר החשבונית ${invoice} כבר רשום אצל ${other ? other.name : clash[0].studentId}`, duplicateInvoice: true });
     }
-    const { taken } = await store.savePurchaseBatch(ids, invoice, station);
+    const { taken } = await store.savePurchaseBatch(ids, invoice, station, crypto.randomBytes(8).toString('hex'));
     if (taken.length) {
       const names = people.filter(p => taken.includes(p.id)).map(p => p.name).join(', ');
       return json(res, 409, { error: `כבר נרשם כרטיס עבור: ${names}. הסירו אותם מהרכישה ונסו שוב.`, taken });
     }
-    sendConfirmations(ids).catch(e => console.error('sendConfirmations', e));
+    sendConfirmations(ids[0]).catch(e => console.error('sendConfirmations', e));
     return json(res, 200, { saved: people.map(p => ({ id: p.id, name: p.name })), invoice, mail: mailer.configured() });
   }
 
@@ -248,25 +248,25 @@ function pickEmail(student) {
   return (ext || emails[0] || [])[1] || '';
 }
 
-// Send confirmation emails in the background; record each result on the purchase.
-async function sendConfirmations(ids) {
+// One confirmation email per transaction, to the first person in it (or the next one who has an email).
+// The status is recorded on every purchase row of the transaction.
+async function sendConfirmations(firstId) {
   if (!mailer.configured()) return;
-  const jobs = [];
-  for (const id of ids) {
-    const p = await store.getPurchase(id), st = await store.getStudent(id);
-    if (!p || !st) continue;
-    const to = pickEmail(st);
-    if (!to) { await store.setEmailStatus(id, { status: 'no_email' }); continue; }
-    await store.setEmailStatus(id, { to, status: 'sending' });
-    jobs.push({ id, to, ...confirmationEmail({ name: st.name, id: st.idDisplay || st.id, invoice: p.invoice }) });
-  }
-  if (!jobs.length) return;
-  const results = await mailer.sendMany(jobs);
-  for (let i = 0; i < jobs.length; i++) {
-    const r = results[i] || { ok: false, error: 'unknown' };
-    await store.setEmailStatus(jobs[i].id, { to: jobs[i].to, status: r.ok ? 'sent' : 'failed', error: r.ok ? null : r.error });
-    if (!r.ok) console.warn('email failed', jobs[i].id, r.error);
-  }
+  const first = await store.getPurchase(firstId);
+  if (!first) return;
+  const rows = first.tx ? await store.listTx(first.tx) : [first];
+  const people = [];
+  for (const r of rows) people.push({ row: r, st: await store.getStudent(r.studentId) });
+  const target = people.find(x => x.st && pickEmail(x.st));
+  const mark = async status => { for (const x of people) await store.setEmailStatus(x.row.studentId, status); };
+  if (!target) return mark({ status: 'no_email' });
+  const to = pickEmail(target.st);
+  await mark({ to, status: 'sending' });
+  const count = rows.reduce((n, r) => n + (r.tickets || 1), 0);
+  const m = confirmationEmail({ name: target.st.name, count, invoice: first.invoice, at: first.createdAt });
+  const [r] = await mailer.sendMany([{ to, ...m }]);
+  await mark({ to, status: r.ok ? 'sent' : 'failed', error: r.ok ? null : r.error });
+  if (!r.ok) console.warn('email failed', first.invoice, r.error);
 }
 
 async function newPersonFields() {

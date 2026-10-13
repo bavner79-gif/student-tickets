@@ -52,8 +52,8 @@ class Conn {
   close() { try { this.sock.write('QUIT\r\n'); this.sock.end(); } catch {} }
 }
 
-function buildMessage({ to, subject, text, html }) {
-  const boundary = 'b' + crypto.randomBytes(12).toString('hex');
+function buildMessage({ to, subject, text, html, inline = [] }) {
+  const alt = 'a' + crypto.randomBytes(12).toString('hex'), rel = 'r' + crypto.randomBytes(12).toString('hex');
   const domain = USER.split('@')[1] || 'localhost';
   const headers = [
     `From: ${encWord(FROM_NAME)} <${USER}>`,
@@ -62,10 +62,13 @@ function buildMessage({ to, subject, text, html }) {
     `Date: ${new Date().toUTCString().replace('GMT', '+0000')}`,
     `Message-ID: <${crypto.randomBytes(12).toString('hex')}@${domain}>`,
     'MIME-Version: 1.0',
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
   ];
-  const part = (type, body) => `--${boundary}\r\nContent-Type: ${type}; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n${wrap(b64(body))}`;
-  return headers.join('\r\n') + '\r\n\r\n' + part('text/plain', text) + part('text/html', html) + `--${boundary}--\r\n`;
+  const part = (b, type, body) => `--${b}\r\nContent-Type: ${type}; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n${wrap(b64(body))}`;
+  const alternative = part(alt, 'text/plain', text) + part(alt, 'text/html', html) + `--${alt}--\r\n`;
+  if (!inline.length) return headers.join('\r\n') + `\r\nContent-Type: multipart/alternative; boundary="${alt}"\r\n\r\n` + alternative;
+  const imgs = inline.map(f => `--${rel}\r\nContent-Type: ${f.type}; name="${f.name}"\r\nContent-Transfer-Encoding: base64\r\nContent-ID: <${f.cid}>\r\nContent-Disposition: inline; filename="${f.name}"\r\n\r\n${wrap(f.data.toString('base64'))}`).join('');
+  return headers.join('\r\n') + `\r\nContent-Type: multipart/related; boundary="${rel}"\r\n\r\n`
+    + `--${rel}\r\nContent-Type: multipart/alternative; boundary="${alt}"\r\n\r\n${alternative}` + imgs + `--${rel}--\r\n`;
 }
 
 // messages: [{to, subject, text, html}] → [{to, ok, error}]

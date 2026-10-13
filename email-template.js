@@ -1,39 +1,50 @@
-// The confirmation email a buyer receives after the purchase is saved.
-const EVENT = process.env.EVENT_NAME || 'מסיבת פתיחת שנה – אוניברסיטת רייכמן';
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const maskId = id => { const s = String(id || ''); return s.length > 4 ? '•'.repeat(s.length - 4) + s.slice(-4) : s; };
+// The purchase confirmation email: one per transaction, sent to the first person in it.
+const fs = require('fs');
+const path = require('path');
 
-module.exports = function confirmation({ name, id, invoice }) {
-  const subject = `אישור רכישה – ${EVENT}`;
+const EVENT = process.env.EVENT_NAME || 'מסיבת פתיחת שנה';
+const SUPPORT = process.env.SUPPORT_EMAIL || 'info@reichman-u.com';
+const SUBJECT = process.env.MAIL_SUBJECT || 'אישור רכישת כרטיס/ים מסיבת פתיחת שנה';
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+let banner = null;
+for (const p of [path.join(__dirname, 'public', 'static', 'email-banner.jpg'), path.join(__dirname, 'email-banner.jpg')]) {
+  try { banner = fs.readFileSync(p); break; } catch {}
+}
+
+function israelDateTime(d) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
+    .formatToParts(d).map(p => [p.type, p.value]));
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
+}
+
+module.exports = function confirmation({ name, count, invoice, at }) {
+  const { date, time } = israelDateTime(at ? new Date(at) : new Date());
+  const ticketsText = count === 1 ? 'כרטיס אחד' : `${count} כרטיסים`;
+  const rows = [
+    ['שם האירוע', esc(EVENT)],
+    ['תאריך', `<span dir="ltr">${date}</span>`],
+    ['שעה', `<span dir="ltr">${time}</span>`],
+    ['שם המזמין', esc(name)],
+    ['מספר כרטיסים', String(count)],
+    ['מספר חשבונית', `<span dir="ltr">${esc(invoice)}</span>`],
+    ['אימייל לתמיכה', `<a href="mailto:${esc(SUPPORT)}" style="color:#1a56db">${esc(SUPPORT)}</a>`],
+  ];
   const text = [
-    `שלום ${name},`, '',
-    'הרכישה שלך הושלמה בהצלחה.', '',
-    `כרטיס אחד על שם: ${name}`,
-    `מספר זהות: ${maskId(id)}`,
-    `מספר חשבונית: ${invoice}`, '',
-    'הכרטיס יישלח אליך באפליקציית מוביטי.',
-    'הכרטיס אישי ואינו ניתן להעברה. הכניסה מובטחת לבעלי כרטיס בלבד.', '',
-    'נתראה במסיבה!', '',
-    'הודעה זו נשלחה אוטומטית בעקבות רכישה בעמדת המכירה.',
+    `שלום ${name}`,
+    `אישור רכישה עבור ${ticketsText} בחשבונית מספר ${invoice}`, '',
+    `שם האירוע: ${EVENT}`, `תאריך: ${date}`, `שעה: ${time}`, `שם המזמין: ${name}`,
+    `מספר כרטיסים: ${count}`, `מספר חשבונית: ${invoice}`, `אימייל לתמיכה: ${SUPPORT}`,
   ].join('\n');
-  const row = (k, v) => `<tr><td style="padding:8px 0;color:#5b6b82;font-size:14px">${k}</td><td style="padding:8px 0;font-size:15px;font-weight:700;text-align:left;direction:ltr">${v}</td></tr>`;
-  const html = `<!doctype html><html lang="he" dir="rtl"><body style="margin:0;background:#eef1f6;font-family:Arial,Helvetica,sans-serif;color:#16233a">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef1f6;padding:24px 12px"><tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:14px;overflow:hidden" dir="rtl">
-<tr><td style="background:#26354d;color:#ffffff;padding:22px 24px;text-align:center;font-size:20px;font-weight:700">${esc(EVENT)}</td></tr>
-<tr><td style="padding:24px">
-<p style="margin:0 0 6px;font-size:17px">שלום ${esc(name)},</p>
-<p style="margin:0 0 18px;font-size:17px;font-weight:700;color:#137a43">✓ הרכישה שלך הושלמה בהצלחה</p>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #e3e8ef;border-bottom:1px solid #e3e8ef;margin-bottom:18px">
-${row('כרטיס אחד על שם', `<span style="direction:rtl">${esc(name)}</span>`)}
-${row('מספר זהות', esc(maskId(id)))}
-${row('מספר חשבונית', esc(invoice))}
-</table>
-<p style="margin:0 0 8px;font-size:15px">הכרטיס יישלח אליך באפליקציית <b>מוביטי</b>.</p>
-<p style="margin:0 0 18px;font-size:14px;color:#5b6b82">הכרטיס אישי ואינו ניתן להעברה. הכניסה מובטחת לבעלי כרטיס בלבד.</p>
-<p style="margin:0;font-size:16px;font-weight:700">נתראה במסיבה!</p>
-</td></tr>
-<tr><td style="padding:14px 24px;background:#f5f7fa;color:#8a97ab;font-size:12px;text-align:center">הודעה זו נשלחה אוטומטית בעקבות רכישה בעמדת המכירה.</td></tr>
+  const html = `<!doctype html><html lang="he" dir="rtl"><body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#222">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" dir="rtl"><tr><td align="center" style="padding:16px 8px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:643px" dir="rtl">
+${banner ? `<tr><td><img src="cid:banner@tickets" width="643" alt="${esc(EVENT)} – אוניברסיטת רייכמן" style="display:block;width:100%;max-width:643px;height:auto;border:0"></td></tr>` : ''}
+<tr><td style="padding:22px 6px 6px;font-size:18px;font-weight:700">שלום ${esc(name)}</td></tr>
+<tr><td style="padding:0 6px 18px;font-size:16px">אישור רכישה עבור <b>${ticketsText}</b> בחשבונית מספר <b dir="ltr">${esc(invoice)}</b></td></tr>
+<tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0" dir="rtl" style="font-size:14px">
+${rows.map(([k, v]) => `<tr><td style="padding:6px;font-weight:700;width:150px;vertical-align:top">${k}:</td><td style="padding:6px;color:#444">${v}</td></tr>`).join('\n')}
+</table></td></tr>
 </table></td></tr></table></body></html>`;
-  return { subject, text, html };
+  return { subject: SUBJECT, text, html, inline: banner ? [{ cid: 'banner@tickets', type: 'image/jpeg', name: 'banner.jpg', data: banner }] : [] };
 };
