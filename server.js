@@ -135,6 +135,11 @@ async function api(req, res, url, s) {
     const first = get(/שם\s*פרטי|first/i), last = get(/שם\s*משפחה|last|surname/i), full = get(/^שם(\s*מלא)?$|full\s*name|^name$/i);
     const name = full || [first, last].filter(Boolean).join(' ');
     if (!name) return json(res, 400, { error: 'יש להזין שם' });
+    // Everyone added by hand needs a personal (non-internal) email; the internal one is optional.
+    const mails = fields.filter(([h]) => /מייל|דוא"?ל|e-?mail/i.test(h));
+    const ext = mails.filter(([h]) => !/פנימי|internal/i.test(h));
+    const need = ext.length ? ext : mails;
+    if (need.length && !need.some(([, v]) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v))) return json(res, 400, { error: 'חובה להזין אימייל חיצוני' });
     const data = { id, idDisplay: String(b.id).trim().slice(0, 20), name, fields, manual: true, addedAt: new Date().toISOString(), addedBy: s.station || '' };
     if (!(await store.addStudent({ id, data }))) return json(res, 409, { error: 'מספר הזהות הזה כבר קיים במאגר' });
     return json(res, 200, { student: data, purchase: null });
