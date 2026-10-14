@@ -264,7 +264,7 @@ async function api(req, res, url, s) {
   if (route === 'GET /api/purchases') {
     // Stations see only their own sales; the admin sees everything.
     const list = (await store.listPurchases()).filter(p => admin || p.station === s.station);
-    return json(res, 200, { scope: admin ? 'all' : 'station', station: s.station, mail: mailer.configured(), purchases: list.map(p => ({ studentId: p.studentId, tickets: p.tickets, invoice: p.invoice, station: p.station, priceType: p.priceType, price: p.price, createdAt: p.createdAt, updatedAt: p.updatedAt, name: p.student ? p.student.name : '(לא במאגר)',
+    return json(res, 200, { scope: admin ? 'all' : 'station', station: s.station, mail: mailer.configured(), purchases: list.map(p => ({ studentId: p.studentId, tickets: p.tickets, invoice: p.invoice, station: p.station, priceType: p.priceType, price: p.price, createdAt: p.createdAt, updatedAt: p.updatedAt, name: p.student ? p.student.name : '(לא במאגר)', gender: admin ? genderOf(p.student) : undefined,
       emailTo: p.emailTo, emailStatus: p.emailStatus, emailError: p.emailError })) });
   }
 
@@ -348,6 +348,14 @@ async function sendConfirmations(firstId) {
 // The "add new person" form shows only these columns (in this order), when they exist in the uploaded file.
 // Study year is always included and fixed at 0.
 const PRICE = { student: 70, guest: 100 };
+// 'm' / 'f' / '' from the gender column (ז / נ, or words like זכר / נקבה / male / female).
+function genderOf(st) {
+  const f = st && (st.fields || []).find(([h]) => /מגדר|מין|gender|sex/i.test(h));
+  const v = f ? String(f[1] || '').trim().toLowerCase() : '';
+  if (/^(ז|זכר|m|male|גבר)/.test(v)) return 'm';
+  if (/^(נ|נקבה|f|female|אישה)/.test(v)) return 'f';
+  return '';
+}
 const FORM_FIELDS = ['שם פרטי', 'שם משפחה', 'מגדר', 'אימייל פנימי', 'אימייל חיצוני', 'טלפון סלולארי', 'שנת לימוד'];
 const normH = h => String(h || '').replace(/["״׳']/g, '').replace(/\s+/g, ' ').trim();
 
