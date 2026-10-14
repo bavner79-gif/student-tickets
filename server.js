@@ -225,19 +225,26 @@ async function api(req, res, url, s) {
       const other = await store.getStudent(clash[0].studentId);
       return json(res, 409, { error: `מספר החשבונית ${invoice} כבר רשום אצל ${other ? other.name : clash[0].studentId}`, duplicateInvoice: true });
     }
-    const { taken } = await store.savePurchaseBatch(ids, invoice, station, crypto.randomBytes(8).toString('hex'));
+    // Price per person: in the list = student; added by hand = guest unless the station chose the student price (manager-approved exception).
+    const asked = {};
+    (Array.isArray(b.studentIds) ? b.studentIds : []).forEach((raw, i) => { asked[normId(raw)] = Array.isArray(b.priceTypes) ? b.priceTypes[i] : null; });
+    const prices = people.map(p => {
+      const type = !p.manual ? 'student' : (asked[p.id] === 'student' ? 'student' : 'guest');
+      return { type, amount: PRICE[type] };
+    });
+    const { taken } = await store.savePurchaseBatch(ids, invoice, station, crypto.randomBytes(8).toString('hex'), prices);
     if (taken.length) {
       const names = people.filter(p => taken.includes(p.id)).map(p => p.name).join(', ');
       return json(res, 409, { error: `כבר נרשם כרטיס עבור: ${names}. הסירו אותם מהרכישה ונסו שוב.`, taken });
     }
     sendConfirmations(ids[0]).catch(e => console.error('sendConfirmations', e));
-    return json(res, 200, { saved: people.map(p => ({ id: p.id, name: p.name })), invoice, mail: mailer.configured() });
+    return json(res, 200, { saved: people.map(p => ({ id: p.id, name: p.name })), invoice, total: prices.reduce((a, x) => a + x.amount, 0), mail: mailer.configured() });
   }
 
   if (route === 'GET /api/purchases') {
     // Stations see only their own sales; the admin sees everything.
     const list = (await store.listPurchases()).filter(p => admin || p.station === s.station);
-    return json(res, 200, { scope: admin ? 'all' : 'station', station: s.station, mail: mailer.configured(), purchases: list.map(p => ({ studentId: p.studentId, tickets: p.tickets, invoice: p.invoice, station: p.station, createdAt: p.createdAt, updatedAt: p.updatedAt, name: p.student ? p.student.name : '(לא במאגר)',
+    return json(res, 200, { scope: admin ? 'all' : 'station', station: s.station, mail: mailer.configured(), purchases: list.map(p => ({ studentId: p.studentId, tickets: p.tickets, invoice: p.invoice, station: p.station, priceType: p.priceType, price: p.price, createdAt: p.createdAt, updatedAt: p.updatedAt, name: p.student ? p.student.name : '(לא במאגר)',
       emailTo: p.emailTo, emailStatus: p.emailStatus, emailError: p.emailError })) });
   }
 
@@ -282,7 +289,7 @@ async function api(req, res, url, s) {
     if (!admin) return needAdmin();
     const list = await store.listPurchases();
     return json(res, 200, {
-      purchases: list.map(p => ({ studentId: p.studentId, tickets: p.tickets, invoice: p.invoice, station: p.station, createdAt: p.createdAt, updatedAt: p.updatedAt, name: p.student ? p.student.name : '', fields: p.student ? p.student.fields : [] })),
+      purchases: list.map(p => ({ studentId: p.studentId, tickets: p.tickets, invoice: p.invoice, station: p.station, priceType: p.priceType, price: p.price, createdAt: p.createdAt, updatedAt: p.updatedAt, name: p.student ? p.student.name : '', fields: p.student ? p.student.fields : [] })),
       log: await store.listLog(),
     });
   }
@@ -320,6 +327,7 @@ async function sendConfirmations(firstId) {
 
 // The "add new person" form shows only these columns (in this order), when they exist in the uploaded file.
 // Study year is always included and fixed at 0.
+const PRICE = { student: 70, guest: 100 };
 const FORM_FIELDS = ['שם פרטי', 'שם משפחה', 'מגדר', 'אימייל פנימי', 'אימייל חיצוני', 'טלפון סלולארי', 'שנת לימוד'];
 const normH = h => String(h || '').replace(/["״׳']/g, '').replace(/\s+/g, ' ').trim();
 

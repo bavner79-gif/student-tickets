@@ -27,10 +27,10 @@ window.downloadPurchasesXlsx = async () => {
   const extra = [];
   purchases.forEach(p => (p.fields || []).forEach(([h]) => { if (!extra.includes(h)) extra.push(h); }));
   const dt = t => t ? new Date(t) : '';
-  const rows = [['מספר זהות', 'שם', 'מספר כרטיסים', 'מספר חשבונית', 'עמדה', 'נרשם', 'עודכן', ...extra]];
+  const rows = [['מספר זהות', 'שם', 'מספר כרטיסים', 'מספר חשבונית', 'סוג מחיר', 'מחיר', 'עמדה', 'נרשם', 'עודכן', ...extra]];
   for (const p of purchases) {
     const get = h => { const f = (p.fields || []).find(x => x[0] === h); return f ? f[1] : ''; };
-    rows.push([p.studentId, p.name, p.tickets, p.invoice, p.station || '', dt(p.createdAt), dt(p.updatedAt), ...extra.map(get)]);
+    rows.push([p.studentId, p.name, p.tickets, p.invoice, p.priceType === 'student' ? 'סטודנט' : p.priceType === 'guest' ? 'אורח' : '', p.price ?? '', p.station || '', dt(p.createdAt), dt(p.updatedAt), ...extra.map(get)]);
   }
   const act = { create: 'רכישה', update: 'עדכון', delete: 'מחיקה' };
   const logRows = [['זמן', 'מספר זהות', 'פעולה', 'כרטיסים', 'חשבונית', 'עמדה'], ...log.map(l => [dt(l.at), l.student_id, act[l.action] || l.action, l.tickets, l.invoice, l.station || ''])];

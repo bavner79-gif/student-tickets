@@ -26,8 +26,8 @@
     <button class="btn" type="button" id="exportBtn" data-admin hidden>הורדה לאקסל</button>
   </div>
   <div class="tablewrap"><table>
-    <thead><tr><th>עודכן</th><th>שם</th><th>מספר זהות</th><th>כרטיסים</th><th>חשבונית</th><th>עמדה</th><th class="mailcol" hidden>מייל</th><th data-admin hidden></th></tr></thead>
-    <tbody id="body"><tr><td colspan="9" class="muted">טוען…</td></tr></tbody>
+    <thead><tr><th>עודכן</th><th>שם</th><th>מספר זהות</th><th>כרטיסים</th><th>חשבונית</th><th>מחיר</th><th>עמדה</th><th class="mailcol" hidden>מייל</th><th data-admin hidden></th></tr></thead>
+    <tbody id="body"><tr><td colspan="10" class="muted">טוען…</td></tr></tbody>
   </table></div>
 </div>
 <div class="toast" id="toast" hidden></div>
@@ -53,16 +53,16 @@ function render() {
   const t = all.reduce((s, p) => s + p.tickets, 0);
   const tx = new Set(all.map(p => p.invoice.toLowerCase())).size;
   const scopeNote = scope === 'station' ? `<p class="muted scope-note">מוצגות רק המכירות של עמדה ${esc(myStation)}</p>` : '';
-  $('#kpis').innerHTML = scopeNote + `<div class="kpi"><span>אנשים עם כרטיס</span><b>${all.length}</b></div><div class="kpi"><span>סה"כ כרטיסים</span><b>${t}</b></div><div class="kpi"><span>חשבוניות</span><b>${tx}</b></div>`;
+  $('#kpis').innerHTML = scopeNote + `<div class="kpi"><span>אנשים עם כרטיס</span><b>${all.length}</b></div><div class="kpi"><span>סה"כ כרטיסים</span><b>${t}</b></div><div class="kpi"><span>חשבוניות</span><b>${tx}</b></div><div class="kpi"><span>סה"כ נגבה</span><b>${all.reduce((a, p) => a + (p.price || 0), 0).toLocaleString('he-IL')} ₪</b></div>`;
   const q = $('#q').value.trim().toLowerCase();
   const rows = all.filter(p => !q || [p.name, p.studentId, p.invoice, p.station].join(' ').toLowerCase().includes(q));
   const admin = window.me && window.me.role === 'admin';
   $('#body').innerHTML = rows.length ? rows.map(p => `<tr>
     <td class="num">${fmtTime(p.updatedAt)}</td><td><b>${esc(p.name)}</b></td><td class="num">${esc(p.studentId)}</td>
-    <td class="num">${p.tickets}</td><td class="num">${esc(p.invoice)}</td><td>${esc(p.station || '')}</td>
+    <td class="num">${p.tickets}</td><td class="num">${esc(p.invoice)}</td><td class="num">${p.price != null ? `${p.price} ₪ <span class="muted">${p.priceType === 'guest' ? 'אורח' : 'סטודנט'}</span>` : '—'}</td><td>${esc(p.station || '')}</td>
     ${mailOn ? `<td>${mailCell(p)}</td>` : ''}
     ${admin ? `<td>${askDel === p.studentId ? `<button class="btn danger" data-del="${esc(p.studentId)}">למחוק?</button> <button class="btn" data-no>לא</button>` : `<button class="btn" data-ask="${esc(p.studentId)}">מחיקה</button>`}</td>` : ''}
-  </tr>`).join('') : `<tr><td colspan="9" class="muted">${q ? 'אין תוצאות לחיפוש.' : (scope === 'station' ? 'עדיין לא נרשמו רכישות בעמדה הזו. ' : 'עדיין לא נרשמו רכישות. ') + 'רכישה שתישמר בעמוד האיתור תופיע כאן.'}</td></tr>`;
+  </tr>`).join('') : `<tr><td colspan="10" class="muted">${q ? 'אין תוצאות לחיפוש.' : (scope === 'station' ? 'עדיין לא נרשמו רכישות בעמדה הזו. ' : 'עדיין לא נרשמו רכישות. ') + 'רכישה שתישמר בעמוד האיתור תופיע כאן.'}</td></tr>`;
 }
 document.addEventListener('me', render);
 document.addEventListener('click', async e => {

@@ -19,7 +19,7 @@ function createPgStore(url) {
       await q(`CREATE TABLE IF NOT EXISTS purchases (
         student_id TEXT PRIMARY KEY, tickets INT NOT NULL, invoice TEXT NOT NULL,
         station TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
-      for (const col of ['email_to TEXT', 'email_status TEXT', 'email_error TEXT', 'email_at TIMESTAMPTZ', 'tx TEXT', 'tx_pos INT'])
+      for (const col of ['email_to TEXT', 'email_status TEXT', 'email_error TEXT', 'email_at TIMESTAMPTZ', 'tx TEXT', 'tx_pos INT', 'price_type TEXT', 'price INT'])
         await q(`ALTER TABLE purchases ADD COLUMN IF NOT EXISTS ${col}`);
       await q(`CREATE TABLE IF NOT EXISTS purchase_log (
         id SERIAL PRIMARY KEY, student_id TEXT, action TEXT, tickets INT, invoice TEXT, station TEXT,
@@ -80,13 +80,14 @@ function createPgStore(url) {
       return this.getPurchase(p.studentId);
     },
     // Save several one-ticket purchases under one invoice; all or nothing.
-    async savePurchaseBatch(ids, invoice, station, tx) {
+    async savePurchaseBatch(ids, invoice, station, tx, prices = []) {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
         const taken = [];
         for (const [pos, id] of ids.entries()) {
-          const r = await client.query(`INSERT INTO purchases(student_id,tickets,invoice,station,tx,tx_pos) VALUES($1,1,$2,$3,$4,$5) ON CONFLICT(student_id) DO NOTHING RETURNING student_id`, [id, invoice, station, tx, pos]);
+          const pr = prices[pos] || {};
+          const r = await client.query(`INSERT INTO purchases(student_id,tickets,invoice,station,tx,tx_pos,price_type,price) VALUES($1,1,$2,$3,$4,$5,$6,$7) ON CONFLICT(student_id) DO NOTHING RETURNING student_id`, [id, invoice, station, tx, pos, pr.type || null, pr.amount ?? null]);
           if (!r.rowCount) taken.push(id);
         }
         if (taken.length) { await client.query('ROLLBACK'); return { taken }; }
@@ -118,7 +119,7 @@ function createPgStore(url) {
 
 function rowToPurchase(r) {
   return { studentId: r.student_id, tickets: r.tickets, invoice: r.invoice, station: r.station, createdAt: r.created_at, updatedAt: r.updated_at,
-    tx: r.tx || null, txPos: r.tx_pos ?? null,
+    tx: r.tx || null, txPos: r.tx_pos ?? null, priceType: r.price_type || null, price: r.price ?? null,
     emailTo: r.email_to || null, emailStatus: r.email_status || null, emailError: r.email_error || null, emailAt: r.email_at || null };
 }
 
@@ -152,12 +153,13 @@ function createFileStore(file) {
       db.log.push({ student_id: p.studentId, action, tickets: p.tickets, invoice: p.invoice, station: p.station, at: now });
       save(); return db.purchases[p.studentId];
     },
-    async savePurchaseBatch(ids, invoice, station, tx) {
+    async savePurchaseBatch(ids, invoice, station, tx, prices = []) {
       const taken = ids.filter(id => db.purchases[id]);
       if (taken.length) return { taken };
       const now = new Date().toISOString();
       for (const id of ids) {
-        db.purchases[id] = { studentId: id, tickets: 1, invoice, station, tx, txPos: ids.indexOf(id), createdAt: now, updatedAt: now };
+        const pr = prices[ids.indexOf(id)] || {};
+        db.purchases[id] = { studentId: id, tickets: 1, invoice, station, tx, txPos: ids.indexOf(id), priceType: pr.type || null, price: pr.amount ?? null, createdAt: now, updatedAt: now };
         db.log.push({ student_id: id, action: 'create', tickets: 1, invoice, station, at: now });
       }
       save(); return { taken: [] };

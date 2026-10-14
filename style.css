@@ -174,3 +174,11 @@ td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 .phonefix .btn{min-height:44px;padding:0 18px}
 .phone-add .msg{margin:0}
 .pf-input::placeholder{font-family:system-ui,sans-serif;letter-spacing:0}
+button.pill-t{border:1px dashed currentColor;cursor:pointer;font:inherit;font-size:.8rem;font-weight:700}
+.pill-t.guest{background:var(--accent-soft);color:var(--accent)}
+.cart-total{border:1px solid var(--line);border-radius:12px;background:var(--sunk);padding:12px 14px;display:grid;gap:8px}
+.ct-lines{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:.95rem}
+.ct-lines b{color:var(--ink)}
+.ct-sum{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-top:1px solid var(--line);padding-top:8px}
+.ct-sum span{font-weight:700}
+.ct-sum b{font-size:1.7rem;color:var(--ok)}

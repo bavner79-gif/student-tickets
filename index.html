@@ -34,6 +34,7 @@
   <section class="card checkout" id="checkout" hidden>
     <h2 class="checkout-title">רישום רכישה</h2>
     <ol class="cart" id="cartList"></ol>
+    <div class="cart-total" id="cartTotal"></div>
     <form class="buy" id="buyForm" autocomplete="off">
       <div class="field"><label for="invoice">מספר חשבונית</label><input id="invoice" class="mono" dir="ltr" required></div>
       <button class="btn ok big" type="submit" id="saveBtn">שמירה</button>
@@ -119,7 +120,7 @@ async function lookup(key, raw) {
   if (!id) return;
   $('#saved').hidden = true;
   slotEl(key).querySelector('.scan-input').value = id;
-  Object.assign(s, { status: 'loading', query: id, student: null, purchase: null, justAdded: false });
+  Object.assign(s, { status: 'loading', query: id, student: null, purchase: null, justAdded: false, priceOverride: null });
   renderSlot(s); refresh();
   try {
     const r = await api('/api/student/' + encodeURIComponent(id));
@@ -279,6 +280,15 @@ function bindAddForm(s) {
 }
 
 /* ---------- add-person button + checkout ---------- */
+// Ticket prices as set up on the credit terminal. In the list = student; added by hand = guest,
+// unless the station manager approves the student price (tap the price to switch).
+const PRICES = { student: { label: 'סטודנט', item: 'סטודנט ש. ראשון', amount: 70 }, guest: { label: 'אורח', item: 'אורח ש. ראשון', amount: 100 } };
+const priceType = s => s.student && s.student.manual ? (s.priceOverride || 'guest') : 'student';
+$('#cartList').addEventListener('click', e => {
+  const b = e.target.closest('[data-ptype]'); if (!b) return;
+  const s = slotOf(+b.dataset.ptype); if (!s) return;
+  s.priceOverride = priceType(s) === 'guest' ? 'student' : 'guest'; refresh();
+});
 function refresh() {
   const cart = slots.filter(inCart);
   const last = slots[slots.length - 1];
@@ -286,7 +296,18 @@ function refresh() {
   const gate = needsEmail(slots[0]);
   $('#addRow').hidden = gate || !(cart.length && lastDone);
   $('#checkout').hidden = gate || !cart.length;
-  $('#cartList').innerHTML = cart.map(s => `<li><span>${esc(s.student.name)}</span><span class="mono">${esc(s.student.idDisplay || s.student.id)}</span><span class="pill-t">כרטיס 1</span></li>`).join('');
+  $('#cartList').innerHTML = cart.map(s => {
+    const t = priceType(s), P = PRICES[t];
+    const pill = s.student.manual
+      ? `<button type="button" class="pill-t ${t}" data-ptype="${s.key}" title="לחיצה מחליפה בין אורח לסטודנט (חריג באישור מנהל העמדה)">${P.label} · ${P.amount} ₪ ⇄</button>`
+      : `<span class="pill-t ${t}">${P.label} · ${P.amount} ₪</span>`;
+    return `<li><span>${esc(s.student.name)}</span><span class="mono">${esc(s.student.idDisplay || s.student.id)}</span>${pill}</li>`;
+  }).join('');
+  const n = { student: 0, guest: 0 }; cart.forEach(s => n[priceType(s)]++);
+  const total = n.student * PRICES.student.amount + n.guest * PRICES.guest.amount;
+  const parts = ['student', 'guest'].filter(t => n[t]).map(t => `<span>${n[t]} × ${PRICES[t].item} <b class="mono">${n[t] * PRICES[t].amount} ₪</b></span>`);
+  const exc = cart.some(s => s.student.manual && priceType(s) === 'student');
+  $('#cartTotal').innerHTML = `<div class="ct-lines">${parts.join('')}</div><div class="ct-sum"><span>סה״כ לחיוב במסופון</span><b class="mono">${total} ₪</b></div>${exc ? '<p class="msg warn" style="margin:0">יש מחיר סטודנט למי שלא במאגר. רק באישור מנהל העמדה ובהצגת אסמכתא.</p>' : ''}`;
   const blocked = slots.some(s => s.status === 'found' && (s.purchase || s.dup)) || slots.some(s => s.status === 'notfound' || s.status === 'loading');
   $('#saveBtn').textContent = cart.length > 1 ? `שמירה · ${cart.length} כרטיסים` : 'שמירה · כרטיס 1';
   $('.checkout-title').textContent = `רישום רכישה · ${cart.length} ${cart.length === 1 ? 'אדם' : 'אנשים'}`;
@@ -314,8 +335,8 @@ async function save(force) {
   if (!invoice) { err('הזינו מספר חשבונית'); $('#invoice').focus(); return; }
   $('#saveBtn').disabled = true;
   try {
-    const r = await api('/api/purchases', { method: 'POST', body: JSON.stringify({ studentIds: cart.map(s => s.student.id), invoice, station: station.get(), force }) });
-    $('#saved').innerHTML = `✓ נשמר · חשבונית <span class="mono">${esc(r.invoice)}</span> · ${r.saved.length} ${r.saved.length === 1 ? 'כרטיס' : 'כרטיסים'}: ${r.saved.map(p => esc(p.name)).join(', ')}${r.mail ? ' · אישור נשלח במייל' : ''}`;
+    const r = await api('/api/purchases', { method: 'POST', body: JSON.stringify({ studentIds: cart.map(s => s.student.id), priceTypes: cart.map(priceType), invoice, station: station.get(), force }) });
+    $('#saved').innerHTML = `✓ נשמר · חשבונית <span class="mono">${esc(r.invoice)}</span> · ${r.saved.length} ${r.saved.length === 1 ? 'כרטיס' : 'כרטיסים'}: ${r.saved.map(p => esc(p.name)).join(', ')}${r.total != null ? ` · ${r.total} ₪` : ''}${r.mail ? ' · אישור נשלח במייל' : ''}`;
     $('#saved').hidden = false;
     resetAll(); window.scrollTo({ top: 0 });
   } catch (e) {
