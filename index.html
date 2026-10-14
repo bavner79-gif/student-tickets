@@ -228,13 +228,14 @@ function bindMailFix(s) {
 }
 
 function notFoundHtml(s) {
+  const isInternal = h => /פנימי|internal/i.test(h);
   const kind = h => /מייל|דוא"?ל|e-?mail/i.test(h) ? 'email' : /טלפון|נייד|phone|mobile/i.test(h) ? 'tel' : 'text';
   const inputs = (fieldsCache || []).map((f, i) => {
     const k = kind(f.header), id = `nf${s.key}-${i}`;
     if (f.gender) return `<div class="field"><label for="${id}">${esc(f.header)}</label><select id="${id}" data-h="${esc(f.header)}"><option value="">—</option><option value="ז">ז (זכר)</option><option value="נ">נ (נקבה)</option></select></div>`;
     return f.year
       ? `<div class="field"><label for="${id}">${esc(f.header)}</label><input id="${id}" value="0" readonly class="mono locked"></div>`
-      : `<div class="field"><label for="${id}">${esc(f.header)}${k === 'email' && isFirst(s) ? ' <span class="req">*</span>' : ''}</label><input id="${id}" data-h="${esc(f.header)}" type="${k}"${k === 'text' ? '' : ' dir="ltr"'}${k === 'tel' ? ' inputmode="tel"' : ''} autocomplete="off"></div>`;
+      : `<div class="field"><label for="${id}">${esc(f.header)}${k === 'email' && isFirst(s) && !isInternal(f.header) ? ' <span class="req">*</span>' : ''}</label><input id="${id}" data-h="${esc(f.header)}" type="${k}"${k === 'text' ? '' : ' dir="ltr"'}${k === 'tel' ? ' inputmode="tel"' : ''} autocomplete="off"></div>`;
   }).join('');
   return `<div class="card">
     ${verdict('v-bad', '✕', 'לא נמצא במאגר', `מספר זהות <span class="mono">${esc(s.query)}</span> לא מופיע ברשימת הסטודנטים`)}
@@ -262,7 +263,10 @@ function bindAddForm(s) {
     const bad = [...form.querySelectorAll('input[type=email]')].find(el => el.value && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(el.value));
     if (bad) return fail('כתובת המייל לא תקינה', bad);
     const mails = [...form.querySelectorAll('input[type=email]')];
-    if (isFirst(s) && mails.length && !mails.some(el => el.value.trim())) return fail('לרוכש הראשון חובה להזין כתובת מייל, כדי לשלוח לו את אישור הרכישה', mails.at(-1));
+    // The first buyer needs a personal (non-internal) email for the confirmation; the internal one is optional.
+    const ext = mails.filter(el => !/פנימי|internal/i.test(el.dataset.h || ''));
+    const need = ext.length ? ext : mails;
+    if (isFirst(s) && need.length && !need.some(el => el.value.trim())) return fail('לרוכש הראשון חובה להזין אימייל חיצוני, כדי לשלוח לו את אישור הרכישה', need.at(-1));
     btn.disabled = true;
     try {
       const r = await api('/api/student', { method: 'POST', body: JSON.stringify({ id: newId, fields: vals, station: station.get() }) });
