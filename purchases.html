@@ -35,17 +35,21 @@
 <script src="/static/common.js"></script>
 <script src="/static/excel.js"></script>
 <script>
-let all = [], askDel = null, mailOn = false, scope = 'all', myStation = '';
+let all = [], askDel = null, editMail = null, mailOn = false, scope = 'all', myStation = '';
 async function load() {
-  try { const r = await api('/api/purchases'); all = r.purchases; mailOn = r.mail; scope = r.scope || 'all'; myStation = r.station || ''; render(); } catch (e) { if (e.message !== 'auth') toast(e.message); }
+  try { const r = await api('/api/purchases'); all = r.purchases; mailOn = r.mail; scope = r.scope || 'all'; myStation = r.station || ''; if (!editMail) render(); } catch (e) { if (e.message !== 'auth') toast(e.message); }
 }
 function mailCell(p) {
   const st = p.emailStatus;
-  if (st === 'sent') return `<span class="mail ok" title="${esc(p.emailTo)}">✓ נשלח</span>`;
-  if (st === 'sending') return `<span class="mail">שולח…</span>`;
-  if (st === 'no_email') return `<span class="mail muted">אין מייל</span>`;
+  if (editMail === p.studentId) return `<form class="mailedit" data-mailform="${esc(p.studentId)}" novalidate>
+      <input type="email" dir="ltr" class="me-input" value="${esc(p.emailTo || '')}" placeholder="כתובת מייל">
+      <button class="btn mini ok" type="submit">שליחה</button><button class="btn mini" type="button" data-mailcancel>ביטול</button></form>`;
   const btn = `<button class="btn mini" data-resend="${esc(p.studentId)}">שליחה חוזרת</button>`;
-  if (st === 'failed') return `<span class="mail bad" title="${esc(p.emailError || '')}">✗ נכשל</span> ${btn}`;
+  const to = p.emailTo ? `<span class="mail-to" dir="ltr">${esc(p.emailTo)}</span>` : '';
+  if (st === 'sent') return `<span class="mail ok">✓ נשלח</span> ${to} ${btn}`;
+  if (st === 'sending') return `<span class="mail">שולח…</span>`;
+  if (st === 'no_email') return `<span class="mail muted">אין מייל</span> ${btn}`;
+  if (st === 'failed') return `<span class="mail bad" title="${esc(p.emailError || '')}">✗ נכשל</span> ${to} ${btn}`;
   return btn;
 }
 function render() {
@@ -69,9 +73,21 @@ document.addEventListener('click', async e => {
   const a = e.target.closest('[data-ask]'); if (a) { askDel = a.dataset.ask; render(); return; }
   if (e.target.closest('[data-no]')) { askDel = null; render(); return; }
   const rs = e.target.closest('[data-resend]');
-  if (rs) { rs.disabled = true; rs.textContent = 'שולח…'; try { const r = await api('/api/mail/resend/' + rs.dataset.resend, { method: 'POST' }); toast('נשלח אל ' + r.to); } catch (err) { toast(err.message); } load(); return; }
+  if (rs) { editMail = rs.dataset.resend; render(); const i = document.querySelector('.me-input'); if (i) { i.focus(); i.select(); } return; }
+  if (e.target.closest('[data-mailcancel]')) { editMail = null; render(); return; }
   const d = e.target.closest('[data-del]');
   if (d) { try { await api('/api/purchase/' + d.dataset.del, { method: 'DELETE' }); askDel = null; toast('הרכישה נמחקה'); load(); } catch (err) { toast(err.message); } }
+});
+// Resend the confirmation, optionally to a corrected address (it is also saved for that person).
+document.addEventListener('submit', async e => {
+  const f = e.target.closest('[data-mailform]'); if (!f) return;
+  e.preventDefault();
+  const email = f.querySelector('.me-input').value.trim(), btn = f.querySelector('button[type=submit]');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast('כתובת המייל לא תקינה'); return; }
+  btn.disabled = true; btn.textContent = 'שולח…';
+  try { const r = await api('/api/mail/resend/' + encodeURIComponent(f.dataset.mailform), { method: 'POST', body: JSON.stringify({ email }) }); toast('נשלח אל ' + r.to); editMail = null; }
+  catch (err) { toast(err.message); btn.disabled = false; btn.textContent = 'שליחה'; return; }
+  load();
 });
 $('#q').addEventListener('input', render);
 $('#refresh').addEventListener('click', load);

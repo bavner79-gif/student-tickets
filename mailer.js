@@ -78,6 +78,7 @@ async function sendMany(messages) {
   const results = [];
   try {
     const greet = c.read();
+    greet.catch(() => {}); // if the connection fails, open() reports it; never leave this rejection unhandled (it would crash the server)
     await c.open();
     const g = await greet; if (g.code !== 220) throw new Error('SMTP greeting ' + g.code);
     await c.cmd('EHLO student-tickets', [250]);

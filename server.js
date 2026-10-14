@@ -115,6 +115,21 @@ async function api(req, res, url, s) {
     const id = normId(decodeURIComponent(rm[1]));
     const own = await store.getPurchase(id);
     if (!own || (!admin && own.station !== s.station)) return json(res, 404, { error: 'רכישה לא נמצאה' });
+    // Optional corrected address: saved as the external email of the person the confirmation goes to (first in the purchase).
+    const b = await readBody(req, 5000).catch(() => ({}));
+    const email = String((b && b.email) || '').trim();
+    if (email) {
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 200) return json(res, 400, { error: 'כתובת המייל לא תקינה' });
+      const rows = own.tx ? await store.listTx(own.tx) : [own];
+      const firstId = rows[0].studentId, st = await store.getStudent(firstId);
+      if (st) {
+        const fields = (st.fields || []).map(f => [...f]);
+        const isMail = h => /מייל|דוא"?ל|e-?mail/i.test(h);
+        const slot = fields.find(([h]) => isMail(h) && /חיצוני|פרטי|external|personal/i.test(h)) || fields.find(([h]) => isMail(h));
+        if (slot) slot[1] = email; else fields.push(['אימייל חיצוני', email]);
+        await store.updateStudent(firstId, { ...st, fields, emailAddedAt: new Date().toISOString(), emailAddedBy: s.station || '' });
+      }
+    }
     await sendConfirmations(id);
     const p = await store.getPurchase(id);
     return p.emailStatus === 'sent' ? json(res, 200, { ok: true, to: p.emailTo }) : json(res, 502, { error: p.emailStatus === 'no_email' ? 'אין כתובת מייל לאדם הזה' : (p.emailError || 'השליחה נכשלה') });
