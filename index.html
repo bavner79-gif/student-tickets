@@ -133,7 +133,7 @@ async function lookup(key, raw) {
 }
 
 // Only these columns are shown for verification at the station, in this order.
-const SHOWN = ['שם פרטי', 'שם משפחה', 'אימייל פנימי', 'אימייל חיצוני', 'טלפון סלולארי', 'שנת לימוד'];
+const SHOWN = ['שם פרטי', 'שם משפחה', 'אימייל פנימי', 'אימייל חיצוני', 'טלפון סלולארי'];
 const normH = h => String(h || '').replace(/["״׳']/g, '').replace(/\s+/g, ' ').trim();
 function shownFields(all) {
   const out = [];
