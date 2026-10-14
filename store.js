@@ -56,6 +56,9 @@ function createPgStore(url) {
     async sampleStudent() {
       const r = await q(`SELECT data FROM students WHERE coalesce(data->>'manual','') <> 'true' LIMIT 1`); return r.rows[0] ? r.rows[0].data : null;
     },
+    async updateStudent(id, data) {
+      await q(`UPDATE students SET data=$2 WHERE id=$1`, [id, JSON.stringify(data)]);
+    },
     async addStudent(row) {
       const r = await q(`INSERT INTO students(id,data) VALUES($1,$2) ON CONFLICT(id) DO NOTHING RETURNING id`, [row.id, JSON.stringify(row.data)]);
       return r.rowCount === 1;
@@ -137,6 +140,7 @@ function createFileStore(file) {
     async countStudents() { return Object.keys(db.students).length; },
     async countManual() { return Object.values(db.students).filter(d => d.manual).length; },
     async sampleStudent() { return Object.values(db.students).find(d => !d.manual) || null; },
+    async updateStudent(id, data) { if (db.students[id]) { db.students[id] = data; save(); } },
     async addStudent(row) { if (db.students[row.id]) return false; db.students[row.id] = row.data; save(); return true; },
     async getStudent(id) { return db.students[id] || null; },
     async getPurchase(id) { return db.purchases[id] || null; },

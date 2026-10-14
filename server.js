@@ -140,6 +140,23 @@ async function api(req, res, url, s) {
   }
 
   let m;
+  // Add or fix the email of a person (the first buyer must have one for the confirmation email).
+  if (req.method === 'POST' && (m = /^\/api\/student\/([^/]+)\/email$/.exec(url.pathname))) {
+    const id = normId(decodeURIComponent(m[1]));
+    const b = await readBody(req, 5000);
+    const email = String(b.email || '').trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 200) return json(res, 400, { error: 'כתובת המייל לא תקינה' });
+    const st = await store.getStudent(id);
+    if (!st) return json(res, 404, { error: 'לא נמצא במאגר' });
+    const fields = (st.fields || []).map(f => [...f]);
+    const isMail = h => /מייל|דוא"?ל|e-?mail/i.test(h);
+    const slot = fields.find(([h]) => isMail(h) && /חיצוני|פרטי|external|personal/i.test(h)) || fields.find(([h]) => isMail(h));
+    if (slot) slot[1] = email; else fields.push(['אימייל חיצוני', email]);
+    const data = { ...st, fields, emailAddedAt: new Date().toISOString(), emailAddedBy: s.station || '' };
+    await store.updateStudent(id, data);
+    return json(res, 200, { student: data });
+  }
+
   if (req.method === 'GET' && (m = /^\/api\/student\/([^/]+)$/.exec(url.pathname))) {
     const id = normId(decodeURIComponent(m[1]));
     if (!id) return json(res, 400, { error: 'יש להזין מספר זהות' });
@@ -182,6 +199,7 @@ async function api(req, res, url, s) {
       if (!st) return json(res, 404, { error: `מספר זהות ${id} לא נמצא במאגר` });
       people.push(st);
     }
+    if (!pickEmail(people[0])) return json(res, 400, { error: `לרוכש הראשון (${people[0].name}) אין כתובת מייל. הוסיפו מייל לפני השמירה.`, needEmail: people[0].id });
     const clash = (await store.findInvoice(invoice)).filter(p => !ids.includes(p.studentId));
     if (clash.length && !b.force) {
       const other = await store.getStudent(clash[0].studentId);

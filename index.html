@@ -148,6 +148,15 @@ function shownFields(all) {
 const IDLE_HTML = () => `<button type="button" class="idle cam-start" data-cam>${CAM_SVG(44)}<strong>ממתין לסריקה</strong><span>לחצו כאן לסריקת הברקוד במצלמה, או הקלידו מספר זהות למעלה</span></button>`;
 const verdict = (cls, mark, title, sub) => `<div class="verdict ${cls}"><div class="mark" aria-hidden="true">${mark}</div><div><h2>${title}</h2>${sub ? `<p>${sub}</p>` : ''}</div></div>`;
 
+// The first buyer must have an email: the purchase confirmation is sent to them.
+function emailOf(st) {
+  const emails = (st && st.fields || []).filter(([h, v]) => /מייל|דוא"?ל|e-?mail/i.test(h) && /@/.test(v || ''));
+  const ext = emails.find(([h]) => /חיצוני|פרטי|external|personal/i.test(h));
+  return (ext || emails[0] || [])[1] || '';
+}
+const isFirst = s => slots[0] === s;
+const needsEmail = s => !!s && isFirst(s) && s.status === 'found' && !s.purchase && !s.dup && !emailOf(s.student);
+
 function renderSlot(s) {
   const el = slotEl(s.key); if (!el) return;
   const n = slots.indexOf(s) + 1;
@@ -166,8 +175,32 @@ function renderSlot(s) {
     : verdict('v-ok', '✓', 'נמצא במאגר', 'אמתו את הפרטים מול התעודה');
   const fields = shownFields(st.fields).map(([h, val]) =>
     `<div><span>${esc(h)}</span><b class="${/@/.test(val) ? 'email' : /^[\d\-+ ()]+$/.test(val) ? 'mono' : ''}">${esc(val)}</b></div>`).join('');
+  const mailFix = needsEmail(s) ? `<form class="buy mailfix" autocomplete="off" novalidate>
+      <h3>חסרה כתובת מייל</h3>
+      <p class="msg warn" style="margin:0">אישור הרכישה נשלח במייל לרוכש הראשון. בקשו ממנו כתובת מייל והזינו אותה כדי להמשיך.</p>
+      <div class="field"><label for="mf${s.key}">כתובת מייל</label><input id="mf${s.key}" class="mf-input" type="email" dir="ltr" inputmode="email" autocomplete="off"></div>
+      <button class="btn ok big" type="submit">שמירת מייל והמשך</button>
+      <p class="msg err" hidden></p>
+    </form>` : '';
   out.innerHTML = `<div class="card">${v}<p class="name">${esc(st.name)}</p>
-    <div class="details"><div><span>מספר זהות</span><b class="mono">${esc(st.idDisplay || st.id)}</b></div>${fields}</div></div>`;
+    <div class="details"><div><span>מספר זהות</span><b class="mono">${esc(st.idDisplay || st.id)}</b></div>${fields}</div>${mailFix}</div>`;
+  if (mailFix) bindMailFix(s);
+}
+
+function bindMailFix(s) {
+  const form = slotEl(s.key).querySelector('form.mailfix');
+  if (!TOUCH) form.querySelector('.mf-input').focus();
+  form.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const inp = form.querySelector('.mf-input'), msg = form.querySelector('.msg.err'), btn = form.querySelector('button[type=submit]');
+    const email = inp.value.trim(); msg.hidden = true;
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { msg.textContent = 'כתובת המייל לא תקינה'; msg.hidden = false; inp.focus(); return; }
+    btn.disabled = true;
+    try {
+      const r = await api('/api/student/' + encodeURIComponent(s.student.id) + '/email', { method: 'POST', body: JSON.stringify({ email }) });
+      s.student = r.student; slots.forEach(renderSlot); refresh(); toast('המייל נשמר');
+    } catch (err) { btn.disabled = false; msg.textContent = err.message; msg.hidden = false; }
+  });
 }
 
 function notFoundHtml(s) {
@@ -177,11 +210,11 @@ function notFoundHtml(s) {
     if (f.gender) return `<div class="field"><label for="${id}">${esc(f.header)}</label><select id="${id}" data-h="${esc(f.header)}"><option value="">—</option><option value="ז">ז (זכר)</option><option value="נ">נ (נקבה)</option></select></div>`;
     return f.year
       ? `<div class="field"><label for="${id}">${esc(f.header)}</label><input id="${id}" value="0" readonly class="mono locked"></div>`
-      : `<div class="field"><label for="${id}">${esc(f.header)}</label><input id="${id}" data-h="${esc(f.header)}" type="${k}"${k === 'text' ? '' : ' dir="ltr"'}${k === 'tel' ? ' inputmode="tel"' : ''} autocomplete="off"></div>`;
+      : `<div class="field"><label for="${id}">${esc(f.header)}${k === 'email' && isFirst(s) ? ' <span class="req">*</span>' : ''}</label><input id="${id}" data-h="${esc(f.header)}" type="${k}"${k === 'text' ? '' : ' dir="ltr"'}${k === 'tel' ? ' inputmode="tel"' : ''} autocomplete="off"></div>`;
   }).join('');
   return `<div class="card">
     ${verdict('v-bad', '✕', 'לא נמצא במאגר', `מספר זהות <span class="mono">${esc(s.query)}</span> לא מופיע ברשימת הסטודנטים`)}
-    <p class="muted" style="margin:0">בדקו שהמספר נכון. אם צריך, אפשר להוסיף את האדם למאגר כאן. הוא יירשם עם שנת לימוד 0.</p>
+    <p class="muted" style="margin:0">בדקו שהמספר נכון. אם צריך, אפשר להוסיף את האדם למאגר כאן. הוא יירשם עם שנת לימוד 0.${isFirst(s) ? ' לרוכש הראשון חובה כתובת מייל (*).' : ''}</p>
     <form class="buy addform" autocomplete="off" novalidate>
       <h3>הוספת אדם חדש למאגר</h3>
       <div class="field"><label for="nfid${s.key}">מספר זהות</label><input id="nfid${s.key}" class="mono nf-id" inputmode="numeric" value="${esc(s.query)}" dir="ltr"></div>
@@ -204,6 +237,8 @@ function bindAddForm(s) {
     if (nameKeys.length && nameKeys.every(h => !vals[h])) return fail('הזינו שם', form.querySelector(`[data-h="${CSS.escape(nameKeys[0])}"]`));
     const bad = [...form.querySelectorAll('input[type=email]')].find(el => el.value && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(el.value));
     if (bad) return fail('כתובת המייל לא תקינה', bad);
+    const mails = [...form.querySelectorAll('input[type=email]')];
+    if (isFirst(s) && mails.length && !mails.some(el => el.value.trim())) return fail('לרוכש הראשון חובה להזין כתובת מייל, כדי לשלוח לו את אישור הרכישה', mails.at(-1));
     btn.disabled = true;
     try {
       const r = await api('/api/student', { method: 'POST', body: JSON.stringify({ id: newId, fields: vals, station: station.get() }) });
@@ -220,8 +255,9 @@ function refresh() {
   const cart = slots.filter(inCart);
   const last = slots[slots.length - 1];
   const lastDone = last && (last.status === 'found');
-  $('#addRow').hidden = !(cart.length && lastDone);
-  $('#checkout').hidden = !cart.length;
+  const gate = needsEmail(slots[0]);
+  $('#addRow').hidden = gate || !(cart.length && lastDone);
+  $('#checkout').hidden = gate || !cart.length;
   $('#cartList').innerHTML = cart.map(s => `<li><span>${esc(s.student.name)}</span><span class="mono">${esc(s.student.idDisplay || s.student.id)}</span><span class="pill-t">כרטיס 1</span></li>`).join('');
   const blocked = slots.some(s => s.status === 'found' && (s.purchase || s.dup)) || slots.some(s => s.status === 'notfound' || s.status === 'loading');
   $('#saveBtn').textContent = cart.length > 1 ? `שמירה · ${cart.length} כרטיסים` : 'שמירה · כרטיס 1';
@@ -245,6 +281,7 @@ async function save(force) {
   if (slots.some(s => s.status === 'idle' || s.status === 'loading')) return err('יש שורת איתור ריקה. חפשו אדם או הסירו את השורה.');
   if (slots.some(s => s.dup)) return err('אותו אדם מופיע פעמיים. הסירו את השורה הכפולה.');
   if (slots.some(s => s.purchase)) return err('יש אדם שכבר רכש כרטיס. הסירו אותו מהרכישה.');
+  if (needsEmail(slots[0])) return err('לרוכש הראשון אין כתובת מייל. הזינו מייל בחלק העליון.');
   if (!cart.length) return;
   if (!invoice) { err('הזינו מספר חשבונית'); $('#invoice').focus(); return; }
   $('#saveBtn').disabled = true;
