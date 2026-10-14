@@ -173,7 +173,15 @@ function renderSlot(s) {
     : s.dup ? verdict('v-bad', '✕', 'כבר נוסף לרכישה הזו', 'אותו אדם מופיע פעמיים. הסירו את השורה הזו.')
     : st.manual ? verdict('v-ok', '✓', s.justAdded ? 'נוסף למאגר' : 'נמצא במאגר', 'נוסף ידנית בעמדה · שנת לימוד 0')
     : verdict('v-ok', '✓', 'נמצא במאגר', 'אמתו את הפרטים מול התעודה');
-  const fields = shownFields(st.fields).map(([h, val]) =>
+  // A missing phone number can be typed in right here (it is saved to the list).
+  const isPhoneH = h => /טלפון|נייד|phone|mobile/i.test(h);
+  const canAddPhone = !p && !s.dup;
+  const phoneInput = h => `<div class="phone-add"><span>${esc(h)}</span><form class="phonefix" autocomplete="off" novalidate>
+      <input class="pf-input mono" type="tel" inputmode="tel" dir="ltr" placeholder="אין במאגר · הקלידו מספר">
+      <button class="btn ok" type="submit">שמירה</button></form><p class="msg err" hidden></p></div>`;
+  const shown = shownFields(st.fields);
+  if (canAddPhone && !shown.some(([h]) => isPhoneH(h))) shown.push(['טלפון סלולארי', '—']);
+  const fields = shown.map(([h, val]) => canAddPhone && isPhoneH(h) && val === '—' ? phoneInput(h) :
     `<div><span>${esc(h)}</span><b class="${/@/.test(val) ? 'email' : /^[\d\-+ ()]+$/.test(val) ? 'mono' : ''}">${esc(val)}</b></div>`).join('');
   const mailFix = needsEmail(s) ? `<form class="buy mailfix" autocomplete="off" novalidate>
       <h3>חסרה כתובת מייל</h3>
@@ -185,6 +193,22 @@ function renderSlot(s) {
   out.innerHTML = `<div class="card">${v}<p class="name">${esc(st.name)}</p>
     <div class="details"><div><span>מספר זהות</span><b class="mono">${esc(st.idDisplay || st.id)}</b></div>${fields}</div>${mailFix}</div>`;
   if (mailFix) bindMailFix(s);
+  bindPhoneFix(s);
+}
+
+function bindPhoneFix(s) {
+  const form = slotEl(s.key).querySelector('form.phonefix'); if (!form) return;
+  form.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const inp = form.querySelector('.pf-input'), msg = form.parentElement.querySelector('.msg.err'), btn = form.querySelector('button');
+    const phone = inp.value.trim(); msg.hidden = true;
+    if (phone.replace(/\D/g, '').length < 9) { msg.textContent = 'מספר הטלפון לא תקין'; msg.hidden = false; inp.focus(); return; }
+    btn.disabled = true;
+    try {
+      const r = await api('/api/student/' + encodeURIComponent(s.student.id) + '/phone', { method: 'POST', body: JSON.stringify({ phone }) });
+      s.student = r.student; slots.forEach(renderSlot); refresh(); toast('הטלפון נשמר');
+    } catch (err) { btn.disabled = false; msg.textContent = err.message; msg.hidden = false; }
+  });
 }
 
 function bindMailFix(s) {

@@ -158,6 +158,25 @@ async function api(req, res, url, s) {
     return json(res, 200, { student: data });
   }
 
+  // Add a phone number for a person who has none in the list (an existing number is never overwritten here).
+  if (req.method === 'POST' && (m = /^\/api\/student\/([^/]+)\/phone$/.exec(url.pathname))) {
+    const id = normId(decodeURIComponent(m[1]));
+    const b = await readBody(req, 5000);
+    const phone = String(b.phone || '').trim();
+    const digits = phone.replace(/\D/g, '');
+    if (!/^[\d\-+ ()]+$/.test(phone) || digits.length < 9 || digits.length > 13) return json(res, 400, { error: 'מספר הטלפון לא תקין' });
+    const st = await store.getStudent(id);
+    if (!st) return json(res, 404, { error: 'לא נמצא במאגר' });
+    const fields = (st.fields || []).map(f => [...f]);
+    const isPhone = h => /טלפון|נייד|phone|mobile/i.test(h);
+    const slot = fields.find(([h]) => isPhone(h) && /סלולר|נייד|mobile|cell/i.test(h)) || fields.find(([h]) => isPhone(h));
+    if (slot && String(slot[1] || '').trim()) return json(res, 409, { error: 'כבר רשום מספר טלפון במאגר' });
+    if (slot) slot[1] = phone; else fields.push(['טלפון סלולארי', phone]);
+    const data = { ...st, fields, phoneAddedAt: new Date().toISOString(), phoneAddedBy: s.station || '' };
+    await store.updateStudent(id, data);
+    return json(res, 200, { student: data });
+  }
+
   if (req.method === 'GET' && (m = /^\/api\/student\/([^/]+)$/.exec(url.pathname))) {
     const id = normId(decodeURIComponent(m[1]));
     if (!id) return json(res, 400, { error: 'יש להזין מספר זהות' });
