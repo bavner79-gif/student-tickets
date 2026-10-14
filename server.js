@@ -113,7 +113,8 @@ async function api(req, res, url, s) {
   if (req.method === 'POST' && (rm = /^\/api\/mail\/resend\/([^/]+)$/.exec(url.pathname))) {
     if (!mailer.configured()) return json(res, 400, { error: 'המייל לא מחובר' });
     const id = normId(decodeURIComponent(rm[1]));
-    if (!(await store.getPurchase(id))) return json(res, 404, { error: 'רכישה לא נמצאה' });
+    const own = await store.getPurchase(id);
+    if (!own || (!admin && own.station !== s.station)) return json(res, 404, { error: 'רכישה לא נמצאה' });
     await sendConfirmations(id);
     const p = await store.getPurchase(id);
     return p.emailStatus === 'sent' ? json(res, 200, { ok: true, to: p.emailTo }) : json(res, 502, { error: p.emailStatus === 'no_email' ? 'אין כתובת מייל לאדם הזה' : (p.emailError || 'השליחה נכשלה') });
@@ -215,8 +216,9 @@ async function api(req, res, url, s) {
   }
 
   if (route === 'GET /api/purchases') {
-    const list = await store.listPurchases();
-    return json(res, 200, { mail: mailer.configured(), purchases: list.map(p => ({ studentId: p.studentId, tickets: p.tickets, invoice: p.invoice, station: p.station, createdAt: p.createdAt, updatedAt: p.updatedAt, name: p.student ? p.student.name : '(לא במאגר)',
+    // Stations see only their own sales; the admin sees everything.
+    const list = (await store.listPurchases()).filter(p => admin || p.station === s.station);
+    return json(res, 200, { scope: admin ? 'all' : 'station', station: s.station, mail: mailer.configured(), purchases: list.map(p => ({ studentId: p.studentId, tickets: p.tickets, invoice: p.invoice, station: p.station, createdAt: p.createdAt, updatedAt: p.updatedAt, name: p.student ? p.student.name : '(לא במאגר)',
       emailTo: p.emailTo, emailStatus: p.emailStatus, emailError: p.emailError })) });
   }
 
