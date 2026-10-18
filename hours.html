@@ -22,6 +22,7 @@
   .h-edit td{background:var(--surface-strong)}
   .h-edit input,.h-edit select{font:inherit;color:var(--ink);background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:6px 8px;max-width:9.5rem}
   .h-edit input.note{max-width:none;width:100%;min-width:8rem}
+  #wBody input{font:inherit;color:var(--ink);background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%;min-width:7rem;box-sizing:border-box}
   .h-chips{display:flex;flex-wrap:wrap;gap:8px}
   .h-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:99px;padding:4px 6px 4px 12px;background:var(--surface)}
   .h-chip button{background:none;border:0;color:var(--bad);font:inherit;font-weight:700;cursor:pointer;padding:2px 8px}
@@ -33,8 +34,8 @@
   <header class="top">
     <h1>שעות עבודה</h1>
     <nav class="nav">
-      <a href="/">איתור</a>
-      <a href="/purchases">רשימת רכישות</a>
+      <a href="/" data-admin hidden>איתור</a>
+      <a href="/purchases" data-admin hidden>רשימת רכישות</a>
       <a href="/hours">שעות עבודה</a>
       <a href="/admin" data-admin hidden>ניהול</a>
       <button id="logout" type="button">יציאה</button>
@@ -43,7 +44,7 @@
 
   <section class="card h-clock">
     <h2 style="margin:0;font-size:1.15rem">דיווח כניסה ויציאה</h2>
-    <div class="field"><label for="who">מי את/ה?</label><select id="who"><option value="">טוען…</option></select></div>
+    <div class="field" id="whoField" data-admin hidden><label for="who">עבור מי לדווח?</label><select id="who"><option value="">טוען…</option></select></div>
     <div class="h-status" id="status">בחרו שם כדי לדווח</div>
     <button class="btn ok big h-btn" id="clockBtn" type="button" disabled>התחלתי לעבוד</button>
     <details class="h-manual" id="manualBox">
@@ -73,13 +74,17 @@
   </table></div>
 
   <section class="card" data-admin hidden>
-    <h2 style="margin:0;font-size:1.15rem">רשימת העובדים</h2>
-    <div class="h-chips" id="chips"></div>
-    <form class="toolbar" id="addWorker" autocomplete="off">
-      <input id="newName" maxlength="60" placeholder="שם עובד/ת להוספה">
-      <button class="btn primary" type="submit">הוספה</button>
-    </form>
-    <p class="muted" style="margin:0">הסרת שם מהרשימה לא מוחקת את המשמרות שלו.</p>
+    <h2 style="margin:0;font-size:1.15rem">עובדים וקודים אישיים</h2>
+    <p class="muted" style="margin:0">כל עובד נכנס לאתר עם הקוד האישי שלו (4–8 ספרות) ורואה רק את עמוד השעות ואת המשמרות שלו. עובד בלי קוד לא יכול להיכנס, ואתה מדווח עבורו.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>שם</th><th>קוד אישי</th><th></th></tr></thead>
+      <tbody id="wBody"></tbody>
+    </table></div>
+    <div class="toolbar">
+      <button class="btn" type="button" id="wAdd">+ עובד נוסף</button>
+      <button class="btn primary" type="button" id="wSave">שמירת השינויים</button>
+    </div>
+    <p class="muted" style="margin:0">שינוי שם מעביר אליו את כל המשמרות הקודמות (למשל כשתדע את השם של "אחר"). הסרת עובד לא מוחקת את המשמרות שלו.</p>
   </section>
 </div>
 <div class="toast" id="toast" hidden></div>
@@ -108,11 +113,39 @@ async function load() {
 
 function renderWho() {
   const sel = $('#who');
-  const want = sel.value || savedWho.get() || (data.workers.includes(data.station) ? data.station : '');
-  sel.innerHTML = `<option value="">בחרו שם</option>` + data.workers.map(w => `<option${w === want ? ' selected' : ''}>${esc(w)}</option>`).join('');
+  if (data.me) {
+    // A worker reports only for themselves.
+    sel.innerHTML = `<option>${esc(data.me)}</option>`; sel.value = data.me;
+    const w = document.querySelector('.top h1 .who'); if (w) w.textContent = data.me;
+  } else {
+    const want = sel.value || savedWho.get();
+    sel.innerHTML = `<option value="">בחרו שם</option>` + data.workers.map(w => `<option${w === want ? ' selected' : ''}>${esc(w)}</option>`).join('');
+  }
   updateClock();
-  if (data.admin) $('#chips').innerHTML = data.workers.map((w, i) => `<span class="h-chip">${esc(w)}<button type="button" data-rm="${i}" aria-label="הסרת ${esc(w)}">✕</button></span>`).join('') || '<span class="muted">אין עובדים ברשימה</span>';
+  if (data.admin && !wDirty) { wEdit = (data.codes || []).map(w => ({ name: w.name, code: w.code, from: w.name })); renderWorkers(); }
 }
+document.addEventListener('me', () => { if (data.me) { const w = document.querySelector('.top h1 .who'); if (w) w.textContent = data.me; } });
+
+// ---- manager: workers and personal codes ----
+let wEdit = [], wDirty = false;
+function renderWorkers() {
+  $('#wBody').innerHTML = wEdit.length ? wEdit.map((w, i) => `<tr>
+    <td><input class="w-name" data-i="${i}" maxlength="60" value="${esc(w.name)}" aria-label="שם"></td>
+    <td><input class="w-code" data-i="${i}" inputmode="numeric" maxlength="8" dir="ltr" value="${esc(w.code)}" placeholder="ללא קוד" aria-label="קוד אישי"></td>
+    <td><button class="btn mini" type="button" data-wrm="${i}">הסרה</button></td></tr>`).join('')
+    : '<tr><td colspan="3" class="muted">אין עובדים ברשימה. הוסיפו עובד.</td></tr>';
+}
+$('#wBody').addEventListener('input', e => {
+  const i = e.target.dataset.i; if (i == null) return;
+  wEdit[i][e.target.classList.contains('w-code') ? 'code' : 'name'] = e.target.value; wDirty = true;
+});
+$('#wBody').addEventListener('click', e => { const b = e.target.closest('[data-wrm]'); if (!b) return; wEdit.splice(+b.dataset.wrm, 1); wDirty = true; renderWorkers(); });
+$('#wAdd').addEventListener('click', () => { wEdit.push({ name: '', code: '', from: '' }); wDirty = true; renderWorkers(); const n = document.querySelectorAll('.w-name'); n[n.length - 1].focus(); });
+$('#wSave').addEventListener('click', async () => {
+  const workers = wEdit.map(w => ({ name: w.name.trim(), code: w.code.trim(), from: w.from })).filter(w => w.name || w.code);
+  try { await api('/api/hours/workers', { method: 'PUT', body: JSON.stringify({ workers }) }); wDirty = false; toast('רשימת העובדים נשמרה'); load(); }
+  catch (e) { toast(e.message); }
+});
 
 const openOf = w => data.shifts.find(s => s.worker === w && !s.end);
 function updateClock() {
@@ -196,18 +229,6 @@ document.addEventListener('click', async e => {
     try { await api('/api/hours/' + sv.dataset.save, { method: 'PUT', body: JSON.stringify(b) }); editId = null; toast('המשמרת עודכנה'); load(); } catch (err) { toast(err.message); }
     return;
   }
-  const rm = t.closest('[data-rm]');
-  if (rm) { saveWorkers(data.workers.filter((_, i) => i != rm.dataset.rm)); }
-});
-
-async function saveWorkers(names) {
-  try { await api('/api/hours/workers', { method: 'PUT', body: JSON.stringify({ names }) }); load(); } catch (e) { toast(e.message); }
-}
-$('#addWorker').addEventListener('submit', e => {
-  e.preventDefault();
-  const n = $('#newName').value.trim(); if (!n) return;
-  if (data.workers.includes(n)) { toast('השם כבר ברשימה'); return; }
-  $('#newName').value = ''; saveWorkers(data.workers.concat(n));
 });
 
 $('#exportBtn').addEventListener('click', () => {

@@ -83,8 +83,11 @@ async function api(req, res, url, s) {
     const { password, station: typed } = await readBody(req, 10000);
     const pw = String(password || '');
     const hit = STATIONS.find(x => x.password === pw);
-    const role = pw === ADMIN_PASSWORD ? 'admin' : hit ? 'staff' : (STAFF_PASSWORD && pw === STAFF_PASSWORD) ? 'staff' : null;
-    const station = role === 'admin' ? ADMIN_STATION : hit ? hit.name : String(typed || '').trim().slice(0, 60) || 'עמדה';
+    let role = pw === ADMIN_PASSWORD ? 'admin' : hit ? 'staff' : (STAFF_PASSWORD && pw === STAFF_PASSWORD) ? 'staff' : null;
+    // Party staff log in with a personal code that opens only the hours page.
+    const worker = role ? null : await hours.workerByCode(pw);
+    if (worker) role = 'worker';
+    const station = role === 'admin' ? ADMIN_STATION : worker ? worker : hit ? hit.name : String(typed || '').trim().slice(0, 60) || 'עמדה';
     if (!role) { a.n++; attempts.set(ip, a); return json(res, 401, { error: 'סיסמה שגויה' }); }
     attempts.delete(ip);
     const secure = req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
@@ -94,6 +97,7 @@ async function api(req, res, url, s) {
   if (route === 'POST /api/logout') { res.setHeader('Set-Cookie', 'sid=; Path=/; Max-Age=0'); return json(res, 200, { ok: true }); }
 
   if (!s) return json(res, 401, { error: 'יש להתחבר מחדש' });
+  if (s.role === 'worker') return json(res, 403, { error: 'הקוד האישי פותח רק את עמוד השעות' });
   const admin = s.role === 'admin';
   const needAdmin = () => json(res, 403, { error: 'הפעולה מותרת רק למנהל' });
 
@@ -390,6 +394,7 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, f);
     }
     if (url.pathname === '/login') return sendFile(res, path.join(PUBLIC, 'login.html'));
+    if (s && s.role === 'worker' && (url.pathname === '/' || url.pathname === '/purchases' || url.pathname === '/admin')) return redirect(res, '/hours');
     if (url.pathname === '/') return s ? sendFile(res, path.join(PUBLIC, 'index.html')) : redirect(res, '/login');
     if (url.pathname === '/purchases') return s ? sendFile(res, path.join(PUBLIC, 'purchases.html')) : redirect(res, '/login');
     if (url.pathname === '/admin') return s && s.role === 'admin' ? sendFile(res, path.join(PUBLIC, 'admin.html')) : redirect(res, '/login?admin=1');

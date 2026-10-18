@@ -55,6 +55,7 @@ function pgStore(url) {
       } catch (e) { if (e.code === '23505') return 'open'; throw e; }
     },
     async remove(id) { await q(`DELETE FROM hours_shifts WHERE id=$1`, [id]); },
+    async rename(from, to) { await q(`UPDATE hours_shifts SET worker=$2 WHERE worker=$1`, [from, to]); },
   };
 }
 
@@ -80,6 +81,7 @@ function fileStore(file) {
       Object.assign(r, { worker: s.worker, date: s.date, start: s.start, end: s.end || null, note: s.note || '', edited: true, updatedAt: stamp() }); save(); return r;
     },
     async remove(id) { db.shifts = db.shifts.filter(s => s.id !== id); save(); },
+    async rename(from, to) { db.shifts.forEach(s => { if (s.worker === from) s.worker = to; }); save(); },
   };
 }
 
@@ -112,21 +114,55 @@ function checkShift(s, workers, { allowOpen }) {
   return null;
 }
 
+// Workers are stored as [{name, code}] (older data: plain names). A code is the worker's personal login.
+async function roster() {
+  return (await store.workers()).map(w => typeof w === 'string' ? { name: w, code: '' } : { name: String(w.name || ''), code: String(w.code || '') }).filter(w => w.name);
+}
+
+// Personal codes can be seeded from the HOURS_CODES env var ("name:code;name:code") so they never live in git.
+// A seeded code fills an empty slot only; codes the manager set on the page are never overwritten.
+async function seedCodes() {
+  const pairs = String(process.env.HOURS_CODES || '').split(/[;\n]/).map(x => x.trim()).filter(Boolean).map(x => {
+    const i = x.lastIndexOf(':'); return { name: x.slice(0, i).trim(), code: x.slice(i + 1).trim() };
+  }).filter(p => p.name && /^\d{4,8}$/.test(p.code));
+  if (!pairs.length) return;
+  const list = await roster(); let changed = false;
+  for (const p of pairs) {
+    if (list.some(x => x.code === p.code)) continue;
+    const w = list.find(x => x.name === p.name);
+    if (!w) { list.push(p); changed = true; } else if (!w.code) { w.code = p.code; changed = true; }
+  }
+  if (changed) await store.setWorkers(list);
+}
+
+// Used by the login: the worker's name for a personal code, or null.
+async function workerByCode(code) {
+  if (!ready || !/^\d{4,8}$/.test(code || '')) return null;
+  const w = (await roster()).find(x => x.code && x.code === code);
+  return w ? w.name : null;
+}
+
 async function api(req, res, url, s) {
   if (!s) return json(res, 401, { error: 'יש להתחבר מחדש' });
   if (!ready) return json(res, 503, { error: 'מערכת השעות עדיין עולה. נסו שוב בעוד רגע.' });
-  const admin = s.role === 'admin';
+  const admin = s.role === 'admin', isWorker = s.role === 'worker';
+  if (!admin && !isWorker) return json(res, 403, { error: 'עמוד השעות מיועד לעובדים עם קוד אישי ולמנהל. צאו והיכנסו עם הקוד האישי.' });
   const route = req.method + ' ' + url.pathname;
-  const workers = await store.workers();
+  const list = await roster();
+  const workers = list.map(w => w.name);
+  if (isWorker && !workers.includes(s.station)) return json(res, 403, { error: 'הקוד האישי כבר לא פעיל. פנו למנהל.' });
+  // A worker always reports for themselves; the manager picks the name.
+  const who = b => isWorker ? s.station : clean(b.worker, 60);
 
   if (route === 'GET /api/hours') {
-    return json(res, 200, { admin, station: s.station || '', workers, startDate: START_DATE, now: nowIL(), shifts: await store.list() });
+    const shifts = (await store.list()).filter(x => admin || x.worker === s.station);
+    return json(res, 200, { admin, me: isWorker ? s.station : '', workers: admin ? workers : [s.station], codes: admin ? list : undefined, startDate: START_DATE, now: nowIL(), shifts });
   }
 
   // Clock in / clock out with the server's clock (Israel time).
   if (route === 'POST /api/hours/clock') {
     const b = await body(req);
-    const worker = clean(b.worker, 60);
+    const worker = who(b);
     if (!workers.includes(worker)) return json(res, 400, { error: 'יש לבחור עובד מהרשימה' });
     const now = nowIL();
     const open = await store.open(worker);
@@ -140,10 +176,10 @@ async function api(req, res, url, s) {
     return json(res, 200, { action: 'in', shift });
   }
 
-  // A forgotten shift, added after the fact by the worker (marked "manual").
+  // A forgotten shift, added after the fact (marked "manual").
   if (route === 'POST /api/hours/manual') {
     const b = await body(req);
-    const sh = { worker: clean(b.worker, 60), date: clean(b.date, 10), start: clean(b.start, 5), end: clean(b.end, 5), note: clean(b.note, 200), manual: true, createdBy: s.station || '' };
+    const sh = { worker: who(b), date: clean(b.date, 10), start: clean(b.start, 5), end: clean(b.end, 5), note: clean(b.note, 200), manual: true, createdBy: s.station || '' };
     const err = checkShift(sh, workers, { allowOpen: false });
     if (err) return json(res, 400, { error: err });
     return json(res, 200, { shift: await store.add(sh) });
@@ -152,11 +188,19 @@ async function api(req, res, url, s) {
   // ---- manager only ----
   if (!admin) return json(res, 403, { error: 'הפעולה מותרת רק למנהל' });
 
+  // Save the worker list: [{name, code, from}]. "from" is the old name, so a rename carries the shifts along.
   if (route === 'PUT /api/hours/workers') {
     const b = await body(req);
-    const list = [...new Set((Array.isArray(b.names) ? b.names : []).map(n => clean(n, 60)).filter(Boolean))].slice(0, 50);
-    await store.setWorkers(list);
-    return json(res, 200, { workers: list });
+    const rows = (Array.isArray(b.workers) ? b.workers : []).slice(0, 50).map(w => ({ name: clean(w && w.name, 60), code: clean(w && w.code, 8), from: clean(w && w.from, 60) }));
+    if (rows.some(w => !w.name)) return json(res, 400, { error: 'לכל עובד צריך שם' });
+    if (new Set(rows.map(w => w.name)).size !== rows.length) return json(res, 400, { error: 'יש שם שמופיע פעמיים' });
+    if (rows.some(w => w.code && !/^\d{4,8}$/.test(w.code))) return json(res, 400, { error: 'קוד אישי צריך להיות 4 עד 8 ספרות' });
+    const codes = rows.map(w => w.code).filter(Boolean);
+    if (new Set(codes).size !== codes.length) return json(res, 400, { error: 'לשני עובדים יש אותו קוד' });
+    for (const w of rows) if (w.from && w.from !== w.name && workers.includes(w.from)) await store.rename(w.from, w.name);
+    const out = rows.map(({ name, code }) => ({ name, code }));
+    await store.setWorkers(out);
+    return json(res, 200, { workers: out });
   }
 
   let m;
@@ -187,7 +231,7 @@ function page(res) {
 }
 
 module.exports = {
-  init: () => store.init().then(() => { ready = true; console.log('Hours module ready'); }),
-  api, page,
+  init: () => store.init().then(seedCodes).then(() => { ready = true; console.log('Hours module ready'); }),
+  api, page, workerByCode,
   _test: { nowIL, checkShift },
 };
