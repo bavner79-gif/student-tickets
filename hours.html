@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>שעות עבודה – צוות</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&family=Secular+One&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .h-clock{display:flex;flex-direction:column;gap:14px}
+  .h-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .h-row>.field{flex:1 1 140px;min-width:0}
+  .h-status{border-radius:12px;padding:12px 14px;font-weight:700;background:var(--sunk);color:var(--muted)}
+  .h-status.on{background:var(--ok-soft);color:var(--ok)}
+  .h-btn{width:100%;font-size:1.25rem;padding:18px}
+  .h-btn.out{background:var(--bad);color:var(--on-color);border-color:transparent}
+  details.h-manual summary{cursor:pointer;font-weight:700;color:var(--muted)}
+  details.h-manual[open] summary{margin-bottom:12px}
+  .h-tag{display:inline-block;font-size:.75rem;font-weight:700;padding:1px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);margin-inline-start:4px}
+  .h-tag.live{background:var(--ok-soft);color:var(--ok)}
+  .h-edit td{background:var(--surface-strong)}
+  .h-edit input,.h-edit select{font:inherit;color:var(--ink);background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:6px 8px;max-width:9.5rem}
+  .h-edit input.note{max-width:none;width:100%;min-width:8rem}
+  .h-chips{display:flex;flex-wrap:wrap;gap:8px}
+  .h-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:99px;padding:4px 6px 4px 12px;background:var(--surface)}
+  .h-chip button{background:none;border:0;color:var(--bad);font:inherit;font-weight:700;cursor:pointer;padding:2px 8px}
+  .h-note{white-space:normal;min-width:7rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>שעות עבודה</h1>
+    <nav class="nav">
+      <a href="/">איתור</a>
+      <a href="/purchases">רשימת רכישות</a>
+      <a href="/hours">שעות עבודה</a>
+      <a href="/admin" data-admin hidden>ניהול</a>
+      <button id="logout" type="button">יציאה</button>
+    </nav>
+  </header>
+
+  <section class="card h-clock">
+    <h2 style="margin:0;font-size:1.15rem">דיווח כניסה ויציאה</h2>
+    <div class="field"><label for="who">מי את/ה?</label><select id="who"><option value="">טוען…</option></select></div>
+    <div class="h-status" id="status">בחרו שם כדי לדווח</div>
+    <button class="btn ok big h-btn" id="clockBtn" type="button" disabled>התחלתי לעבוד</button>
+    <details class="h-manual" id="manualBox">
+      <summary>שכחתי לדווח – הוספת משמרת ידנית</summary>
+      <form id="manualForm" class="h-clock" novalidate>
+        <div class="h-row">
+          <div class="field"><label for="mDate">תאריך</label><input type="date" id="mDate" required></div>
+          <div class="field"><label for="mStart">התחלה</label><input type="time" id="mStart" required></div>
+          <div class="field"><label for="mEnd">סיום</label><input type="time" id="mEnd" required></div>
+        </div>
+        <div class="field"><label for="mNote">הערה (לא חובה)</label><input id="mNote" maxlength="200" placeholder="למשל: הקמת במה"></div>
+        <button class="btn primary" type="submit">שמירת המשמרת</button>
+      </form>
+    </details>
+  </section>
+
+  <div class="toolbar">
+    <label class="muted" for="from">מתאריך</label><input type="date" id="from">
+    <label class="muted" for="to">עד</label><input type="date" id="to">
+    <button class="btn" id="refresh" type="button">רענון</button>
+    <button class="btn" id="exportBtn" type="button" data-admin hidden>הורדה לאקסל</button>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>תאריך</th><th>עובד/ת</th><th>התחלה</th><th>סיום</th><th>שעות</th><th>הערה</th><th data-admin hidden></th></tr></thead>
+    <tbody id="body"><tr><td colspan="7" class="muted">טוען…</td></tr></tbody>
+  </table></div>
+
+  <section class="card" data-admin hidden>
+    <h2 style="margin:0;font-size:1.15rem">רשימת העובדים</h2>
+    <div class="h-chips" id="chips"></div>
+    <form class="toolbar" id="addWorker" autocomplete="off">
+      <input id="newName" maxlength="60" placeholder="שם עובד/ת להוספה">
+      <button class="btn primary" type="submit">הוספה</button>
+    </form>
+    <p class="muted" style="margin:0">הסרת שם מהרשימה לא מוחקת את המשמרות שלו.</p>
+  </section>
+</div>
+<div class="toast" id="toast" hidden></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="/static/common.js"></script>
+<script>
+let data = { workers: [], shifts: [], admin: false, now: {}, startDate: '2026-10-13' };
+let editId = null, askDel = null, busy = false;
+
+const mins = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const hoursOf = s => { if (!s.end) return null; let d = mins(s.end) - mins(s.start); if (d < 0) d += 1440; return d / 60; };
+const fmtH = h => h == null ? '—' : (Math.round(h * 100) / 100).toLocaleString('he-IL');
+const dmy = d => { const [y, m, dd] = d.split('-'); return `${dd}.${m}`; };
+const savedWho = { get() { try { return localStorage.getItem('hoursWho') || ''; } catch { return ''; } }, set(v) { try { localStorage.setItem('hoursWho', v); } catch {} } };
+
+async function load() {
+  try {
+    data = await api('/api/hours');
+    if (!$('#from').value) $('#from').value = data.startDate;
+    if (!$('#to').value) $('#to').value = data.now.date;
+    for (const id of ['#mDate']) { $(id).min = data.startDate; $(id).max = data.now.date; if (!$(id).value) $(id).value = data.now.date; }
+    renderWho();
+    if (!editId) render();
+  } catch (e) { if (e.message !== 'auth') toast(e.message); }
+}
+
+function renderWho() {
+  const sel = $('#who');
+  const want = sel.value || savedWho.get() || (data.workers.includes(data.station) ? data.station : '');
+  sel.innerHTML = `<option value="">בחרו שם</option>` + data.workers.map(w => `<option${w === want ? ' selected' : ''}>${esc(w)}</option>`).join('');
+  updateClock();
+  if (data.admin) $('#chips').innerHTML = data.workers.map((w, i) => `<span class="h-chip">${esc(w)}<button type="button" data-rm="${i}" aria-label="הסרת ${esc(w)}">✕</button></span>`).join('') || '<span class="muted">אין עובדים ברשימה</span>';
+}
+
+const openOf = w => data.shifts.find(s => s.worker === w && !s.end);
+function updateClock() {
+  const w = $('#who').value, b = $('#clockBtn'), st = $('#status');
+  if (!w) { b.disabled = true; st.className = 'h-status'; st.textContent = 'בחרו שם כדי לדווח'; b.textContent = 'התחלתי לעבוד'; b.classList.remove('out'); return; }
+  b.disabled = busy;
+  const o = openOf(w);
+  st.className = 'h-status' + (o ? ' on' : '');
+  st.textContent = o ? `${w} במשמרת מאז ${o.start} (${dmy(o.date)})` : `${w} לא במשמרת כרגע`;
+  b.textContent = o ? 'סיימתי לעבוד' : 'התחלתי לעבוד';
+  b.classList.toggle('out', !!o);
+}
+
+function inRange() { const f = $('#from').value || '0000', t = $('#to').value || '9999'; return data.shifts.filter(s => s.date >= f && s.date <= t); }
+
+function render() {
+  const list = inRange();
+  const tot = {}; data.workers.forEach(w => tot[w] = 0);
+  list.forEach(s => { const h = hoursOf(s); if (h != null) tot[s.worker] = (tot[s.worker] || 0) + h; });
+  const all = Object.values(tot).reduce((a, b) => a + b, 0);
+  $('#kpis').innerHTML = Object.entries(tot).map(([w, h]) => `<div class="kpi"><span>${esc(w)}</span><b>${fmtH(h)}</b></div>`).join('') + `<div class="kpi"><span>סה"כ שעות</span><b>${fmtH(all)}</b></div>`;
+  const admin = data.admin;
+  $('#body').innerHTML = list.length ? list.map(s => {
+    if (admin && editId === s.id) {
+      const names = data.workers.includes(s.worker) ? data.workers : data.workers.concat(s.worker);
+      return `<tr class="h-edit" data-row="${s.id}">
+        <td><input type="date" class="e-date" value="${s.date}" min="${data.startDate}" max="${data.now.date}"></td>
+        <td><select class="e-worker">${names.map(w => `<option${w === s.worker ? ' selected' : ''}>${esc(w)}</option>`).join('')}</select></td>
+        <td><input type="time" class="e-start" value="${s.start}"></td>
+        <td><input type="time" class="e-end" value="${s.end || ''}"></td>
+        <td class="muted">—</td>
+        <td><input class="e-note note" maxlength="200" value="${esc(s.note)}" placeholder="הערה"></td>
+        <td><button class="btn mini ok" data-save="${s.id}">שמירה</button> <button class="btn mini" data-cancel>ביטול</button></td></tr>`;
+    }
+    const tags = (s.manual ? '<span class="h-tag">ידני</span>' : '') + (s.edited ? '<span class="h-tag">נערך</span>' : '');
+    const act = !admin ? '' : askDel === s.id
+      ? `<td><button class="btn mini danger" data-del="${s.id}">למחוק?</button> <button class="btn mini" data-no>לא</button></td>`
+      : `<td><button class="btn mini" data-edit="${s.id}">עריכה</button> <button class="btn mini" data-ask="${s.id}">מחיקה</button></td>`;
+    return `<tr><td class="num">${dmy(s.date)}</td><td><b>${esc(s.worker)}</b></td><td class="num">${esc(s.start)}</td>
+      <td class="num">${s.end ? esc(s.end) : '<span class="h-tag live">במשמרת</span>'}</td><td class="num">${fmtH(hoursOf(s))}</td>
+      <td class="h-note">${esc(s.note)}${tags}</td>${act}</tr>`;
+  }).join('') : `<tr><td colspan="7" class="muted">אין משמרות בטווח הזה. משמרת שתתחיל בכפתור "התחלתי לעבוד" תופיע כאן.</td></tr>`;
+}
+
+$('#who').addEventListener('change', () => { savedWho.set($('#who').value); updateClock(); });
+$('#clockBtn').addEventListener('click', async () => {
+  const worker = $('#who').value; if (!worker) return;
+  const action = openOf(worker) ? 'out' : 'in';
+  busy = true; updateClock();
+  try {
+    const r = await api('/api/hours/clock', { method: 'POST', body: JSON.stringify({ worker, action }) });
+    toast(r.action === 'in' ? `נרשמה כניסה ב-${r.shift.start}. בהצלחה!` : `נרשמה יציאה ב-${r.shift.end}. תודה!`);
+  } catch (e) { if (e.message !== 'auth') toast(e.message); }
+  busy = false; await load();
+});
+
+$('#manualForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const worker = $('#who').value;
+  if (!worker) { toast('קודם בחרו שם למעלה'); return; }
+  const b = { worker, date: $('#mDate').value, start: $('#mStart').value, end: $('#mEnd').value, note: $('#mNote').value };
+  if (!b.date || !b.start || !b.end) { toast('צריך למלא תאריך, שעת התחלה ושעת סיום'); return; }
+  try {
+    await api('/api/hours/manual', { method: 'POST', body: JSON.stringify(b) });
+    toast('המשמרת נשמרה'); $('#mStart').value = $('#mEnd').value = $('#mNote').value = ''; $('#manualBox').open = false; load();
+  } catch (err) { if (err.message !== 'auth') toast(err.message); }
+});
+
+document.addEventListener('click', async e => {
+  const t = e.target;
+  const ed = t.closest('[data-edit]'); if (ed) { editId = ed.dataset.edit; askDel = null; render(); return; }
+  if (t.closest('[data-cancel]')) { editId = null; render(); return; }
+  const ask = t.closest('[data-ask]'); if (ask) { askDel = ask.dataset.ask; editId = null; render(); return; }
+  if (t.closest('[data-no]')) { askDel = null; render(); return; }
+  const del = t.closest('[data-del]');
+  if (del) { try { await api('/api/hours/' + del.dataset.del, { method: 'DELETE' }); askDel = null; toast('המשמרת נמחקה'); load(); } catch (err) { toast(err.message); } return; }
+  const sv = t.closest('[data-save]');
+  if (sv) {
+    const tr = sv.closest('tr');
+    const b = { worker: tr.querySelector('.e-worker').value, date: tr.querySelector('.e-date').value, start: tr.querySelector('.e-start').value, end: tr.querySelector('.e-end').value, note: tr.querySelector('.e-note').value };
+    try { await api('/api/hours/' + sv.dataset.save, { method: 'PUT', body: JSON.stringify(b) }); editId = null; toast('המשמרת עודכנה'); load(); } catch (err) { toast(err.message); }
+    return;
+  }
+  const rm = t.closest('[data-rm]');
+  if (rm) { saveWorkers(data.workers.filter((_, i) => i != rm.dataset.rm)); }
+});
+
+async function saveWorkers(names) {
+  try { await api('/api/hours/workers', { method: 'PUT', body: JSON.stringify({ names }) }); load(); } catch (e) { toast(e.message); }
+}
+$('#addWorker').addEventListener('submit', e => {
+  e.preventDefault();
+  const n = $('#newName').value.trim(); if (!n) return;
+  if (data.workers.includes(n)) { toast('השם כבר ברשימה'); return; }
+  $('#newName').value = ''; saveWorkers(data.workers.concat(n));
+});
+
+$('#exportBtn').addEventListener('click', () => {
+  const list = inRange().slice().sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+  const rows = [['תאריך', 'עובד/ת', 'התחלה', 'סיום', 'שעות', 'הערה', 'ידני', 'נערך ע"י מנהל']];
+  list.forEach(s => rows.push([s.date.split('-').reverse().join('/'), s.worker, s.start, s.end || 'במשמרת', hoursOf(s) == null ? '' : Math.round(hoursOf(s) * 100) / 100, s.note || '', s.manual ? 'כן' : '', s.edited ? 'כן' : '']));
+  const tot = {}; list.forEach(s => { const h = hoursOf(s); if (h != null) tot[s.worker] = (tot[s.worker] || 0) + h; });
+  const sum = [['עובד/ת', 'סה"כ שעות'], ...Object.entries(tot).map(([w, h]) => [w, Math.round(h * 100) / 100])];
+  const wb = XLSX.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] };
+  const s1 = XLSX.utils.aoa_to_sheet(rows); s1['!cols'] = rows[0].map(() => ({ wch: 14 }));
+  const s2 = XLSX.utils.aoa_to_sheet(sum); s2['!cols'] = [{ wch: 16 }, { wch: 12 }];
+  XLSX.utils.book_append_sheet(wb, s1, 'משמרות'); XLSX.utils.book_append_sheet(wb, s2, 'סיכום');
+  XLSX.writeFile(wb, `שעות-עבודה-${$('#from').value}-עד-${$('#to').value}.xlsx`);
+});
+
+$('#from').addEventListener('change', render); $('#to').addEventListener('change', render);
+$('#refresh').addEventListener('click', load);
+load(); setInterval(() => { if (!editId && !busy) load(); }, 30000);
+</script>
+</body>
+</html>

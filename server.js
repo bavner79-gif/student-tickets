@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const createStore = require('./store');
 const mailer = require('./mailer');
 const confirmationEmail = require('./email-template');
+const hours = require('./hours');
 
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
@@ -379,7 +380,9 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://x');
     const s = session(req);
+    if (url.pathname === '/api/hours' || url.pathname.startsWith('/api/hours/')) return await hours.api(req, res, url, s);
     if (url.pathname.startsWith('/api/')) return await api(req, res, url, s);
+    if (url.pathname === '/hours') return s ? hours.page(res) : redirect(res, '/login?next=/hours');
     if (url.pathname === '/healthz') return send(res, 200, 'ok', { 'Content-Type': 'text/plain' });
     if (url.pathname.startsWith('/static/')) {
       const f = path.normalize(path.join(PUBLIC, url.pathname));
@@ -398,6 +401,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 store.init().then(() => {
+  // The hours module starts on its own; if it fails, ticket sales keep working.
+  hours.init().catch(e => console.error('Hours module failed to start', e));
   server.listen(PORT, () => console.log(`Running on port ${PORT} (storage: ${store.kind})`));
   console.log(`Stations: ${STATIONS.length ? STATIONS.map(x => x.name).join(', ') : 'single staff password'}`);
   if (!process.env.ADMIN_PASSWORD) console.warn('WARNING: ADMIN_PASSWORD not set — using default test password "admin".');

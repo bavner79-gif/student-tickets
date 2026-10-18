@@ -28,7 +28,7 @@ document.getElementById('f').addEventListener('submit', async e => {
   const d = await r.json().catch(() => ({}));
   if (!r.ok) { err.textContent = d.error || 'הכניסה נכשלה'; err.hidden = false; return; }
   try { localStorage.setItem('station', d.station || ''); } catch {}
-  location.href = q.get('admin') && d.role === 'admin' ? '/admin' : '/';
+  location.href = q.get('admin') && d.role === 'admin' ? '/admin' : q.get('next') === '/hours' ? '/hours' : '/';
 });
 </script>
 </body>
