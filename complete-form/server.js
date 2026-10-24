@@ -100,8 +100,13 @@ function validate(seed, body) {
   for (let i = 0; i < expected; i++) {
     const g = list[i] || {};
     const base = (seed.guests || [])[i];
-    const name = clean(g.name), foreign = !!g.foreign;
-    const idnum = clean(g.idnum).replace(foreign ? /[^\w]/g : /\D/g, '');
+    const name = clean(g.name);
+    const raw = clean(g.idnum).replace(/[\s\-./]/g, '').toUpperCase();
+    // Israeli ID if it passes the check digit; otherwise accept a passport / foreign ID (5–12 letters or digits),
+    // except a 9-digit number that fails the check — most likely a typo — unless "passport" was ticked.
+    const isIsraeli = /^\d{1,9}$/.test(raw) && israeliIdOk(raw);
+    const foreign = !isIsraeli && /^[A-Z0-9]{5,12}$/.test(raw) && (!!g.foreign || !/^\d{9}$/.test(raw));
+    const idnum = raw;
     const gphone = phoneNorm(g.phone), gemail = clean(g.email).toLowerCase();
     const k = `g${i}`;
     // A friend left completely empty is allowed: they stay "missing" and are handled at the exceptions desk.
@@ -110,7 +115,9 @@ function validate(seed, body) {
       continue;
     }
     if (!/\S+\s+\S+/.test(name)) errors[`${k}.name`] = 'נא לרשום שם פרטי ושם משפחה';
-    if (foreign ? !/^\w{5,12}$/.test(idnum) : !israeliIdOk(idnum)) errors[`${k}.idnum`] = foreign ? 'מספר דרכון לא תקין' : 'מספר ת״ז לא תקין';
+    if (!isIsraeli && !foreign) errors[`${k}.idnum`] = /^\d{9}$/.test(idnum)
+      ? 'מספר ת״ז לא תקין. אם זה מספר דרכון, סמנו "דרכון / תושב חוץ"'
+      : 'נא לרשום ת״ז או מספר דרכון (5–12 תווים)';
     else if (seen.has(idnum)) errors[`${k}.idnum`] = 'מספר זה כבר הוזן לחבר אחר';
     seen.add(idnum);
     // Registered guests: phone is optional (without it the ticket goes to the buyer); new friends: required.

@@ -88,10 +88,10 @@ function guestBlock(g, i) {
     <div class="gh"><span>${title}</span><span class="tag">${known ? 'אורח/ת רשום/ה' : (g.name ? 'נשמר' : 'אפשר למלא גם אחר כך')}</span></div>
     ${field(`g${i}.name`, 'שם מלא', g.name, 'text', 'autocomplete="off"')}
     <div class="row2">
-      ${field(`g${i}.idnum`, g.foreign ? 'מספר דרכון' : 'מספר ת״ז', g.idnum, 'text', 'inputmode="numeric" autocomplete="off"')}
+      ${field(`g${i}.idnum`, 'ת״ז או מספר דרכון', g.idnum, 'text', 'autocomplete="off" dir="ltr"')}
       ${field(`g${i}.phone`, known ? 'טלפון נייד <span class="opt">(אם ידוע)</span>' : 'טלפון נייד', g.phone, 'tel', 'autocomplete="off" placeholder="05X-XXXXXXX"')}
     </div>
-    <label class="check"><input type="checkbox" id="g${i}.foreign" ${g.foreign ? 'checked' : ''}> אין ת״ז ישראלית (דרכון)</label>
+    <label class="check"><input type="checkbox" id="g${i}.foreign" ${g.foreign ? 'checked' : ''}> דרכון / תושב חוץ (לא ת״ז ישראלית)</label>
     ${field(`g${i}.email`, 'מייל <span class="opt">(רשות, מומלץ)</span>', g.email, 'email', 'autocomplete="off"')}
   </div>`;
 }
@@ -129,7 +129,7 @@ function render() {
   </form>`;
   guests.forEach((g, i) => {
     const cb = document.getElementById(`g${i}.foreign`);
-    cb.addEventListener('change', () => { document.querySelector(`[data-k="g${i}.idnum"] label`).textContent = cb.checked ? 'מספר דרכון' : 'מספר ת״ז'; });
+    void cb;
   });
   $('#f').addEventListener('submit', submit);
 }
