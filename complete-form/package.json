@@ -1,0 +1,10 @@
+{
+  "name": "complete-form",
+  "version": "1.0.0",
+  "private": true,
+  "description": "טופס השלמת פרטים לכרטיסים – מסיבת פתיחת שנה",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=20" },
+  "dependencies": { "pg": "8.13.1" }
+}

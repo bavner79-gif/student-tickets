@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>השלמת פרטים · מסיבת פתיחת שנה</title>
+<style>
+  :root{
+    --navy:#13235c; --navy-2:#0c1840; --red:#e3202b; --sun:#f4b63f;
+    --ink:#1b2033; --muted:#5d6478; --line:#dfe3ec; --bg:#f3f5f9; --card:#fff;
+    --ok:#127a3e; --err:#c4161c; --focus:#2f5bff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Rubik,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5;-webkit-text-size-adjust:100%}
+  .hero{background:radial-gradient(120% 90% at 80% 0%,#20367f 0%,var(--navy) 45%,var(--navy-2) 100%);color:#fff;padding:28px 16px 64px}
+  .hero .wrap{max-width:560px;margin:0 auto}
+  .eyebrow{display:inline-block;font-size:13px;letter-spacing:.02em;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);padding:3px 10px;border-radius:999px}
+  .hero h1{font-size:26px;line-height:1.25;margin:12px 0 6px;font-weight:800}
+  .hero p{margin:0;color:#d5dcf3;font-size:15px}
+  .cup{width:10px;height:10px;border-radius:2px;background:var(--red);display:inline-block;margin-inline-end:6px;vertical-align:middle;box-shadow:0 0 0 3px rgba(244,182,63,.35)}
+  main{max-width:560px;margin:-44px auto 40px;padding:0 16px}
+  .card{background:var(--card);border-radius:16px;box-shadow:0 1px 2px rgba(16,24,40,.06),0 8px 24px rgba(16,24,40,.06);padding:20px;margin-bottom:14px}
+  .card h2{font-size:17px;margin:0 0 4px}
+  .card .sub{color:var(--muted);font-size:14px;margin:0 0 14px}
+  .who{display:flex;gap:12px;align-items:center}
+  .avatar{flex:none;width:44px;height:44px;border-radius:50%;background:#eef1fa;color:var(--navy);display:grid;place-items:center;font-weight:800}
+  .who .n{font-weight:700;font-size:17px}
+  .who .i{color:var(--muted);font-size:13px;direction:ltr;text-align:right}
+  .lock{font-size:12px;color:var(--muted);background:#f1f3f8;border-radius:6px;padding:1px 6px;margin-inline-start:6px}
+  .field{margin:12px 0 0}
+  label{display:block;font-size:14px;font-weight:600;margin-bottom:5px}
+  .opt{font-weight:400;color:var(--muted)}
+  input[type=text],input[type=email],input[type=tel]{width:100%;font:inherit;font-size:16px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+  input:focus{outline:2px solid var(--focus);outline-offset:1px;border-color:transparent}
+  input.ltr{direction:ltr;text-align:right}
+  .bad input{border-color:var(--err)}
+  .msg{color:var(--err);font-size:13px;margin-top:4px;min-height:0}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media (max-width:420px){.row2{grid-template-columns:1fr}}
+  .guest{border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:12px}
+  .guest .gh{display:flex;justify-content:space-between;align-items:center;font-weight:700}
+  .tag{font-size:12px;font-weight:600;color:var(--navy);background:#eef1fa;border-radius:999px;padding:2px 9px}
+  .check{display:flex;gap:8px;align-items:center;font-size:14px;margin-top:8px;color:var(--muted)}
+  .seg{display:flex;gap:8px;margin-top:6px}
+  .seg label{flex:1;margin:0;border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center;font-weight:600;cursor:pointer}
+  .seg input{position:absolute;opacity:0}
+  .seg input:checked+span{color:#fff}
+  .seg label:has(input:checked){background:var(--navy);border-color:var(--navy);color:#fff}
+  .note{background:#fff7e6;border:1px solid #f6dca4;color:#7a5200;border-radius:10px;padding:10px 12px;font-size:14px;margin-top:12px}
+  button{width:100%;font:inherit;font-size:17px;font-weight:700;padding:14px;border:0;border-radius:12px;background:var(--red);color:#fff;cursor:pointer}
+  button:disabled{opacity:.6;cursor:default}
+  .foot{color:var(--muted);font-size:13px;text-align:center;margin-top:10px}
+  .done{text-align:center;padding:28px 20px}
+  .done .big{font-size:40px}
+  .done h2{font-size:20px;margin:6px 0}
+  .linkbtn{background:none;color:var(--navy);text-decoration:underline;font-size:15px;padding:8px;width:auto}
+  .closed{background:#fdeceb;border-color:#f5c2bf;color:#8a1116}
+</style>
+</head>
+<body>
+<header class="hero"><div class="wrap">
+  <span class="eyebrow"><span class="cup"></span>אוניברסיטת רייכמן · שישי 30.10 · מאקה מאקה</span>
+  <h1>מסיבת פתיחת שנה: השלמת פרטים לכרטיסים</h1>
+  <p id="lead">כל משתתף יקבל כרטיס כניסה אישי ישירות לטלפון ולמייל שלו.</p>
+</div></header>
+<main id="app"></main>
+<script>
+const D = /*__DATA__*/null;
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const deadline = new Date(D.deadline).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+const r = D.response;
+const self = r ? r.self : D.self;
+const slots = D.guests.length + D.newSlots;
+const guests = Array.from({ length: slots }, (_, i) => (r && r.guests[i]) || D.guests[i] || { name: '', idnum: '', phone: '', email: '' });
+
+function field(key, label, value, type, extra = '') {
+  const ltr = type !== 'text' ? ' class="ltr"' : '';
+  return `<div class="field" data-k="${key}"><label for="${key}">${label}</label>
+    <input id="${key}" type="${type}" value="${esc(value)}"${ltr} ${extra}><div class="msg"></div></div>`;
+}
+function guestBlock(g, i) {
+  const known = i < D.guests.length;
+  const title = known ? esc(g.name || 'אורח/ת') : `חבר/ה ${i - D.guests.length + 1}`;
+  return `<div class="guest">
+    <div class="gh"><span>${title}</span><span class="tag">${known ? 'אורח/ת רשום/ה' : 'פרטים חסרים'}</span></div>
+    ${field(`g${i}.name`, 'שם מלא', g.name, 'text', 'autocomplete="off"')}
+    <div class="row2">
+      ${field(`g${i}.idnum`, g.foreign ? 'מספר דרכון' : 'מספר ת״ז', g.idnum, 'text', 'inputmode="numeric" autocomplete="off"')}
+      ${field(`g${i}.phone`, 'טלפון נייד', g.phone, 'tel', 'autocomplete="off" placeholder="05X-XXXXXXX"')}
+    </div>
+    <label class="check"><input type="checkbox" id="g${i}.foreign" ${g.foreign ? 'checked' : ''}> אין ת״ז ישראלית (דרכון)</label>
+    ${field(`g${i}.email`, 'מייל <span class="opt">(רשות, מומלץ)</span>', g.email, 'email', 'autocomplete="off"')}
+  </div>`;
+}
+function render() {
+  const app = $('#app');
+  const initials = (D.name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('');
+  const closedNote = D.closed ? `<div class="card closed">מועד ההשלמה הסתיים. אם עדיין חסרים פרטים, הם יושלמו בעמדת החריגים בכניסה.</div>` : '';
+  const doneNote = r ? `<div class="note">הפרטים כבר נשלחו${D.submittedAt ? ' ב־' + new Date(D.submittedAt).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' }) : ''}. אפשר לעדכן עד ${deadline}.</div>` : '';
+  app.innerHTML = `${closedNote}
+  <div class="card">
+    <div class="who"><div class="avatar">${esc(initials)}</div>
+      <div><div class="n">${esc(D.name)}<span class="lock">🔒 לא ניתן לשינוי</span></div>
+      <div class="i">${esc(D.idMasked)}</div></div></div>
+    ${doneNote}
+  </div>
+  <form id="f" novalidate>
+  <div class="card">
+    <h2>${D.isGuest ? 'הפרטים שלך' : 'הפרטים שלך'}</h2>
+    <p class="sub">${D.isGuest ? 'לכאן יישלח כרטיס הכניסה שלך.' : 'מייל אישי (לא של האוניברסיטה) וטלפון נייד, כדי שנוכל לשלוח אליך את הכרטיס.'}</p>
+    ${field('self.email', 'מייל אישי', self.email, 'email', 'autocomplete="email"')}
+    ${field('self.phone', 'טלפון נייד', self.phone, 'tel', 'autocomplete="tel" placeholder="05X-XXXXXXX"')}
+    ${D.askAttending ? `<div class="field" data-k="self.attending"><label>גם את/ה מגיע/ה לאירוע?</label>
+      <div class="note" style="margin-top:0">שימ/י לב: בהזמנה שלך לא נרכש כרטיס על שמך.</div>
+      <div class="seg"><label><input type="radio" name="att" value="yes" ${self.attending === 'yes' ? 'checked' : ''}><span>כן</span></label>
+      <label><input type="radio" name="att" value="no" ${self.attending === 'no' ? 'checked' : ''}><span>לא</span></label></div><div class="msg"></div></div>` : ''}
+  </div>
+  ${slots ? `<div class="card">
+    <h2>${D.newSlots && !D.guests.length ? 'החברים שרכשת עבורם כרטיס' : 'האורחים שלך'}</h2>
+    <p class="sub">כל אחד יקבל כרטיס אישי ישירות לנייד שלו. בכניסה הכרטיס נבדק מול תעודה מזהה, אז חשוב שהשם והמספר יהיו מדויקים.</p>
+    ${guests.map(guestBlock).join('')}
+  </div>` : ''}
+  <button id="go" ${D.closed ? 'disabled' : ''}>${r ? 'עדכון הפרטים' : 'שליחת הפרטים'}</button>
+  <p class="foot">אפשר למלא עד ${deadline}. שאלות: info@reichman-u.com</p>
+  </form>`;
+  guests.forEach((g, i) => {
+    const cb = document.getElementById(`g${i}.foreign`);
+    cb.addEventListener('change', () => { document.querySelector(`[data-k="g${i}.idnum"] label`).textContent = cb.checked ? 'מספר דרכון' : 'מספר ת״ז'; });
+  });
+  $('#f').addEventListener('submit', submit);
+}
+const val = id => (document.getElementById(id) || {}).value || '';
+async function submit(e) {
+  e.preventDefault();
+  const btn = $('#go'); btn.disabled = true; btn.textContent = 'שולח…';
+  document.querySelectorAll('.field').forEach(f => { f.classList.remove('bad'); const m = f.querySelector('.msg'); if (m) m.textContent = ''; });
+  const att = document.querySelector('input[name=att]:checked');
+  const body = {
+    self: { email: val('self.email'), phone: val('self.phone'), attending: att ? att.value : '' },
+    guests: guests.map((_, i) => ({ name: val(`g${i}.name`), idnum: val(`g${i}.idnum`), phone: val(`g${i}.phone`), email: val(`g${i}.email`), foreign: document.getElementById(`g${i}.foreign`).checked })),
+  };
+  try {
+    const res = await fetch(location.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const errs = data.errors || {};
+      let first = null;
+      for (const [k, m] of Object.entries(errs)) {
+        const f = document.querySelector(`[data-k="${k}"]`);
+        if (f) { f.classList.add('bad'); f.querySelector('.msg').textContent = m; first = first || f; }
+      }
+      if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      else alertBox(data.error || 'שגיאה. נסו שוב.');
+      btn.disabled = false; btn.textContent = r ? 'עדכון הפרטים' : 'שליחת הפרטים';
+      return;
+    }
+    $('#app').innerHTML = `<div class="card done"><div class="big">🎉</div><h2>תודה! הפרטים נשמרו</h2>
+      <p>הכרטיסים יישלחו ביום רביעי 28.10 למייל ולנייד של כל משתתף.<br>להתראות בשישי במאקה מאקה!</p>
+      <button class="linkbtn" onclick="location.reload()">לעדכון הפרטים</button></div>`;
+    window.scrollTo(0, 0);
+  } catch {
+    alertBox('אין חיבור לאינטרנט. נסו שוב.');
+    btn.disabled = false; btn.textContent = 'שליחת הפרטים';
+  }
+}
+function alertBox(m) { const n = document.createElement('div'); n.className = 'card closed'; n.textContent = m; $('#app').prepend(n); window.scrollTo(0, 0); }
+render();
+</script>
+</body>
+</html>

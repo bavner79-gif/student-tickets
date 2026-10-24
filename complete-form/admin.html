@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>מעקב השלמת פרטים</title>
+<style>
+  :root{--navy:#13235c;--ink:#1b2033;--muted:#5d6478;--line:#e3e6ee;--bg:#f3f5f9;--ok:#127a3e;--warn:#9a6200;--no:#8a1116}
+  *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--ink)}
+  header{background:var(--navy);color:#fff;padding:18px 16px} header h1{margin:0;font-size:20px} header p{margin:4px 0 0;color:#cfd7f2;font-size:14px}
+  main{max-width:1000px;margin:0 auto;padding:16px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+  .kpi{background:#fff;border-radius:12px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.05)} .kpi b{display:block;font-size:26px} .kpi span{color:var(--muted);font-size:13px}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  .bar a,.bar select,.bar input{font:inherit;font-size:14px;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--ink);text-decoration:none}
+  .bar a.primary{background:var(--navy);color:#fff;border-color:var(--navy)}
+  .tbl{background:#fff;border-radius:12px;overflow:auto;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+  table{border-collapse:collapse;width:100%;font-size:14px} th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  th{background:#f8f9fc;font-weight:600;color:var(--muted)}
+  .st{font-weight:600} .done{color:var(--ok)} .open{color:var(--warn)} .none{color:var(--no)}
+</style>
+</head>
+<body>
+<header><h1>מעקב השלמת פרטים</h1><p id="dl"></p></header>
+<main>
+  <div class="kpis" id="k"></div>
+  <div class="bar">
+    <a class="primary" href="/admin/export.csv">הורדת כל הפרטים (Excel)</a>
+    <select id="flt"><option value="">כל הסטטוסים</option><option value="done">הושלם</option><option value="open">נפתח, לא הושלם</option><option value="none">לא נפתח</option></select>
+    <input id="q" placeholder="חיפוש שם">
+  </div>
+  <div class="tbl"><table><thead><tr><th>שם</th><th>סיבה</th><th>מקומות</th><th>סטטוס</th><th>נפתח</th><th>הושלם</th><th>מגיע/ה</th></tr></thead><tbody id="b"></tbody></table></div>
+</main>
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const f = d => d ? new Date(d).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+let all = [];
+const stOf = x => x.done ? 'done' : x.opened ? 'open' : 'none';
+const label = { done: 'הושלם', open: 'נפתח, לא הושלם', none: 'לא נפתח' };
+function draw() {
+  const fl = document.getElementById('flt').value, q = document.getElementById('q').value.trim();
+  const rows = all.filter(x => (!fl || stOf(x) === fl) && (!q || x.name.includes(q)));
+  document.getElementById('b').innerHTML = rows.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.reasons)}</td><td>${x.slots}</td>
+    <td class="st ${stOf(x)}">${label[stOf(x)]}</td><td>${f(x.firstOpened)}</td><td>${f(x.submittedAt)}</td><td>${x.attending === 'yes' ? 'כן' : x.attending === 'no' ? 'לא' : ''}</td></tr>`).join('');
+}
+async function load() {
+  const d = await (await fetch('/admin/data.json')).json();
+  all = d.list;
+  document.getElementById('dl').textContent = 'מועד אחרון: ' + f(d.deadline);
+  const n = s => all.filter(x => stOf(x) === s).length;
+  const slots = all.reduce((a, x) => a + x.slots, 0), slotsDone = all.filter(x => x.done).reduce((a, x) => a + x.slots, 0);
+  document.getElementById('k').innerHTML = [['קישורים', all.length], ['הושלמו', n('done')], ['נפתחו ולא הושלמו', n('open')], ['לא נפתחו', n('none')], ['אורחים/חברים שהושלמו', `${slotsDone} / ${slots}`]]
+    .map(([t, v]) => `<div class="kpi"><b>${v}</b><span>${t}</span></div>`).join('');
+  draw();
+}
+document.getElementById('flt').onchange = draw; document.getElementById('q').oninput = draw;
+load(); setInterval(load, 60000);
+</script>
+</body>
+</html>
