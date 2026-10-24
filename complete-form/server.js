@@ -12,6 +12,8 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const DEADLINE = new Date(process.env.DEADLINE || '2026-10-27T18:00:00Z'); // Tue 27.10 20:00 Israel time
 const PAGE = fs.readFileSync(path.join(__dirname, 'form.html'), 'utf8');
 const ADMIN_PAGE = fs.readFileSync(path.join(__dirname, 'admin.html'), 'utf8');
+const BANNER = fs.readFileSync(path.join(__dirname, 'banner.jpg'));
+const TYPE_LABEL = { student: 'סטודנט/ית אונ׳ רייכמן', nonstudent: 'לא סטודנט/ית אונ׳ רייכמן' };
 
 /* ---------------- storage ---------------- */
 function pgStore(url) {
@@ -118,7 +120,7 @@ function validate(seed, body) {
     if (!isIsraeli && !foreign) errors[`${k}.idnum`] = /^\d{9}$/.test(idnum)
       ? 'מספר ת״ז לא תקין. אם זה מספר דרכון, סמנו "דרכון / תושב חוץ"'
       : 'נא לרשום ת״ז או מספר דרכון (5–12 תווים)';
-    else if (seen.has(idnum)) errors[`${k}.idnum`] = 'מספר זה כבר הוזן לחבר אחר';
+    else if (seen.has(idnum)) errors[`${k}.idnum`] = 'מספר זה כבר הוזן למשתתף אחר';
     seen.add(idnum);
     // Registered guests: phone is optional (without it the ticket goes to the buyer); new friends: required.
     if (!gphone && (!base || clean(g.phone))) errors[`${k}.phone`] = 'מספר נייד לא תקין';
@@ -170,8 +172,9 @@ function publicSeed(row) {
   return {
     name: s.name, idMasked: maskId(s.idnum), isGuest: !!s.isGuest, askAttending: !!s.askAttending,
     self: { email: s.email || '', phone: s.phone || '' },
-    guests: (s.guests || []).map(g => ({ name: g.name || '', idnum: g.idnum || '', phone: g.phone || '', email: g.email || '' })),
+    guests: (s.guests || []).map(g => ({ name: g.name || '', idnum: g.idnum || '', phone: g.phone || '', email: g.email || '', type: g.type || 'nonstudent' })),
     newSlots: s.newSlots || 0,
+    newTypes: s.newTypes || [],
     response: row.response || null,
     submittedAt: row.submitted_at || null,
     deadline: DEADLINE.toISOString(),
@@ -180,14 +183,15 @@ function publicSeed(row) {
 }
 
 function exportRows(rows) {
-  const out = [['קישור', 'סטטוס', 'נשלח בתאריך', 'תפקיד', 'שם', 'ת״ז / דרכון', 'דרכון?', 'טלפון', 'מייל', 'מגיע/ה בעצמו/ה', 'שם הרוכש', 'ת״ז הרוכש', 'מפתח מקור']];
+  const out = [['קישור', 'סטטוס', 'נשלח בתאריך', 'תפקיד', 'סוג כרטיס', 'שם', 'ת״ז / דרכון', 'דרכון?', 'טלפון', 'מייל', 'מגיע/ה בעצמו/ה', 'שם הרוכש', 'ת״ז הרוכש', 'מפתח מקור']];
   for (const r of rows) {
     const s = r.seed, resp = r.response;
     const status = resp ? (resp.guests.some(g => g.missing) ? 'נשמר חלקית' : 'הושלם') : r.opened_count ? 'נפתח, לא הושלם' : 'לא נפתח';
     const self = resp ? resp.self : { email: s.email, phone: s.phone };
-    out.push([r.token, status, fmt(r.submitted_at), s.isGuest ? 'אורח (מקבל ישירות)' : 'רוכש', s.name, keep(s.idnum), '', keep(self.phone), self.email, self.attending === 'yes' ? 'כן' : self.attending === 'no' ? 'לא' : '', '', '', '']);
+    out.push([r.token, status, fmt(r.submitted_at), s.isGuest ? 'משתתף (מקבל ישירות)' : 'רוכש', s.isGuest ? TYPE_LABEL.nonstudent : '', s.name, keep(s.idnum), '', keep(self.phone), self.email, self.attending === 'yes' ? 'כן' : self.attending === 'no' ? 'לא' : '', '', '', '']);
     const guests = resp ? resp.guests : [...(s.guests || []), ...Array.from({ length: s.newSlots || 0 }, (_, i) => ({ key: `new${i + 1}` }))];
-    for (const g of guests) out.push([r.token, status, fmt(r.submitted_at), g.missing || !g.name ? 'חבר/אורח – חסרים פרטים' : 'חבר/אורח', g.name || '', keep(g.idnum), g.foreign ? 'כן' : '', keep(g.phone), g.email || '', '', s.name, keep(s.idnum), g.key]);
+    const types = [...(s.guests || []).map(g => g.type || 'nonstudent'), ...(s.newTypes || [])];
+    guests.forEach((g, gi) => out.push([r.token, status, fmt(r.submitted_at), g.missing || !g.name ? 'משתתף נוסף – חסרים פרטים' : 'משתתף נוסף', TYPE_LABEL[types[gi]] || '', g.name || '', keep(g.idnum), g.foreign ? 'כן' : '', keep(g.phone), g.email || '', '', s.name, keep(s.idnum), g.key]));
   }
   return out;
 }
@@ -197,6 +201,7 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://x');
     if (url.pathname === '/healthz') return send(res, 200, 'ok', { 'Content-Type': 'text/plain' });
+    if (url.pathname === '/banner.jpg') return send(res, 200, BANNER, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' });
     if (NEEDS_DB) return send(res, 503, notFound('הטופס ייפתח בקרוב.'), { 'Content-Type': 'text/html; charset=utf-8' });
     const m = url.pathname.match(/^\/c\/([A-Za-z0-9]{10,40})$/);
     if (m) {

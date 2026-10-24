@@ -50,7 +50,7 @@ async function load() {
   document.getElementById('dl').textContent = 'מועד אחרון: ' + f(d.deadline);
   const n = s => all.filter(x => stOf(x) === s).length;
   const slots = all.reduce((a, x) => a + x.slots, 0), slotsDone = all.filter(x => x.done).reduce((a, x) => a + x.slots - x.missing, 0);
-  document.getElementById('k').innerHTML = [['קישורים', all.length], ['הושלמו', n('done')], ['נפתחו ולא הושלמו', n('open')], ['נשמרו חלקית', n('part')], ['לא נפתחו', n('none')], ['אורחים/חברים שהושלמו', `${slotsDone} / ${slots}`]]
+  document.getElementById('k').innerHTML = [['קישורים', all.length], ['הושלמו', n('done')], ['נפתחו ולא הושלמו', n('open')], ['נשמרו חלקית', n('part')], ['לא נפתחו', n('none')], ['משתתפים נוספים שהושלמו', `${slotsDone} / ${slots}`]]
     .map(([t, v]) => `<div class="kpi"><b>${v}</b><span>${t}</span></div>`).join('');
   draw();
 }
