@@ -104,11 +104,17 @@ function validate(seed, body) {
     const idnum = clean(g.idnum).replace(foreign ? /[^\w]/g : /\D/g, '');
     const gphone = phoneNorm(g.phone), gemail = clean(g.email).toLowerCase();
     const k = `g${i}`;
+    // A friend left completely empty is allowed: they stay "missing" and are handled at the exceptions desk.
+    if (!base && !name && !idnum && !clean(g.phone) && !gemail) {
+      out.guests.push({ key: `new${i - (seed.guests || []).length + 1}`, missing: true });
+      continue;
+    }
     if (!/\S+\s+\S+/.test(name)) errors[`${k}.name`] = 'נא לרשום שם פרטי ושם משפחה';
     if (foreign ? !/^\w{5,12}$/.test(idnum) : !israeliIdOk(idnum)) errors[`${k}.idnum`] = foreign ? 'מספר דרכון לא תקין' : 'מספר ת״ז לא תקין';
     else if (seen.has(idnum)) errors[`${k}.idnum`] = 'מספר זה כבר הוזן לחבר אחר';
     seen.add(idnum);
-    if (!gphone) errors[`${k}.phone`] = 'מספר נייד לא תקין';
+    // Registered guests: phone is optional (without it the ticket goes to the buyer); new friends: required.
+    if (!gphone && (!base || clean(g.phone))) errors[`${k}.phone`] = 'מספר נייד לא תקין';
     if (gemail && !emailOk(gemail)) errors[`${k}.email`] = 'כתובת מייל לא תקינה';
     out.guests.push({ key: base ? base.key : `new${i - (seed.guests || []).length + 1}`, name, idnum, foreign, phone: gphone || clean(g.phone), email: gemail });
   }
@@ -170,11 +176,11 @@ function exportRows(rows) {
   const out = [['קישור', 'סטטוס', 'נשלח בתאריך', 'תפקיד', 'שם', 'ת״ז / דרכון', 'דרכון?', 'טלפון', 'מייל', 'מגיע/ה בעצמו/ה', 'שם הרוכש', 'ת״ז הרוכש', 'מפתח מקור']];
   for (const r of rows) {
     const s = r.seed, resp = r.response;
-    const status = resp ? 'הושלם' : r.opened_count ? 'נפתח, לא הושלם' : 'לא נפתח';
+    const status = resp ? (resp.guests.some(g => g.missing) ? 'נשמר חלקית' : 'הושלם') : r.opened_count ? 'נפתח, לא הושלם' : 'לא נפתח';
     const self = resp ? resp.self : { email: s.email, phone: s.phone };
     out.push([r.token, status, fmt(r.submitted_at), s.isGuest ? 'אורח (מקבל ישירות)' : 'רוכש', s.name, keep(s.idnum), '', keep(self.phone), self.email, self.attending === 'yes' ? 'כן' : self.attending === 'no' ? 'לא' : '', '', '', '']);
     const guests = resp ? resp.guests : [...(s.guests || []), ...Array.from({ length: s.newSlots || 0 }, (_, i) => ({ key: `new${i + 1}` }))];
-    for (const g of guests) out.push([r.token, status, fmt(r.submitted_at), 'חבר/אורח', g.name, keep(g.idnum), g.foreign ? 'כן' : '', keep(g.phone), g.email, '', s.name, keep(s.idnum), g.key]);
+    for (const g of guests) out.push([r.token, status, fmt(r.submitted_at), g.missing || !g.name ? 'חבר/אורח – חסרים פרטים' : 'חבר/אורח', g.name || '', keep(g.idnum), g.foreign ? 'כן' : '', keep(g.phone), g.email || '', '', s.name, keep(s.idnum), g.key]);
   }
   return out;
 }
@@ -212,7 +218,7 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/admin/data.json') {
         const list = rows.map(r => ({ token: r.token, name: r.seed.name, reasons: r.seed.reasons || '', isGuest: !!r.seed.isGuest,
           slots: (r.seed.guests || []).length + (r.seed.newSlots || 0), opened: r.opened_count, firstOpened: r.first_opened_at, submittedAt: r.submitted_at,
-          done: !!r.response, attending: r.response && r.response.self ? r.response.self.attending || '' : '' }));
+          done: !!r.response, missing: r.response ? r.response.guests.filter(g => g.missing).length : (r.seed.guests || []).length + (r.seed.newSlots || 0), attending: r.response && r.response.self ? r.response.self.attending || '' : '' }));
         return json(res, 200, { list, deadline: DEADLINE.toISOString() });
       }
       if (url.pathname === '/admin') return send(res, 200, ADMIN_PAGE, { 'Content-Type': 'text/html; charset=utf-8' });

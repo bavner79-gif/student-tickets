@@ -74,7 +74,7 @@ const deadline = new Date(D.deadline).toLocaleString('he-IL', { timeZone: 'Asia/
 const r = D.response;
 const self = r ? r.self : D.self;
 const slots = D.guests.length + D.newSlots;
-const guests = Array.from({ length: slots }, (_, i) => (r && r.guests[i]) || D.guests[i] || { name: '', idnum: '', phone: '', email: '' });
+const guests = Array.from({ length: slots }, (_, i) => { const g = (r && r.guests[i]) || D.guests[i]; return g && !g.missing ? g : { name: '', idnum: '', phone: '', email: '' }; });
 
 function field(key, label, value, type, extra = '') {
   const ltr = type !== 'text' ? ' class="ltr"' : '';
@@ -85,11 +85,11 @@ function guestBlock(g, i) {
   const known = i < D.guests.length;
   const title = known ? esc(g.name || 'אורח/ת') : `חבר/ה ${i - D.guests.length + 1}`;
   return `<div class="guest">
-    <div class="gh"><span>${title}</span><span class="tag">${known ? 'אורח/ת רשום/ה' : 'פרטים חסרים'}</span></div>
+    <div class="gh"><span>${title}</span><span class="tag">${known ? 'אורח/ת רשום/ה' : (g.name ? 'נשמר' : 'אפשר למלא גם אחר כך')}</span></div>
     ${field(`g${i}.name`, 'שם מלא', g.name, 'text', 'autocomplete="off"')}
     <div class="row2">
       ${field(`g${i}.idnum`, g.foreign ? 'מספר דרכון' : 'מספר ת״ז', g.idnum, 'text', 'inputmode="numeric" autocomplete="off"')}
-      ${field(`g${i}.phone`, 'טלפון נייד', g.phone, 'tel', 'autocomplete="off" placeholder="05X-XXXXXXX"')}
+      ${field(`g${i}.phone`, known ? 'טלפון נייד <span class="opt">(אם ידוע)</span>' : 'טלפון נייד', g.phone, 'tel', 'autocomplete="off" placeholder="05X-XXXXXXX"')}
     </div>
     <label class="check"><input type="checkbox" id="g${i}.foreign" ${g.foreign ? 'checked' : ''}> אין ת״ז ישראלית (דרכון)</label>
     ${field(`g${i}.email`, 'מייל <span class="opt">(רשות, מומלץ)</span>', g.email, 'email', 'autocomplete="off"')}
@@ -121,6 +121,7 @@ function render() {
   ${slots ? `<div class="card">
     <h2>${D.newSlots && !D.guests.length ? 'החברים שרכשת עבורם כרטיס' : 'האורחים שלך'}</h2>
     <p class="sub">כל אחד יקבל כרטיס אישי ישירות לנייד שלו. בכניסה הכרטיס נבדק מול תעודה מזהה, אז חשוב שהשם והמספר יהיו מדויקים.</p>
+    ${D.newSlots ? `<div class="note" style="margin:0 0 4px">אין לך עדיין את הפרטים של כל החברים? אפשר לשמור עכשיו ולחזור להשלים דרך אותו קישור. חבר בלי פרטים לא יקבל כרטיס מראש, ויצטרך להשלים אותם בעמדת חריגים בכניסה.</div>` : ''}
     ${guests.map(guestBlock).join('')}
   </div>` : ''}
   <button id="go" ${D.closed ? 'disabled' : ''}>${r ? 'עדכון הפרטים' : 'שליחת הפרטים'}</button>
@@ -157,7 +158,9 @@ async function submit(e) {
       btn.disabled = false; btn.textContent = r ? 'עדכון הפרטים' : 'שליחת הפרטים';
       return;
     }
+    const left = body.guests.slice(D.guests.length).filter(g => !g.name && !g.idnum && !g.phone).length;
     $('#app').innerHTML = `<div class="card done"><div class="big">🎉</div><h2>תודה! הפרטים נשמרו</h2>
+      ${left ? `<div class="note">חסרים עדיין פרטים של ${left === 1 ? 'חבר אחד' : left + ' חברים'}. אפשר לחזור לאותו קישור ולהשלים עד ${deadline}.</div>` : ''}
       <p>הכרטיסים יישלחו ביום רביעי 28.10 למייל ולנייד של כל משתתף.<br>להתראות בשישי במאקה מאקה!</p>
       <button class="linkbtn" onclick="location.reload()">לעדכון הפרטים</button></div>`;
     window.scrollTo(0, 0);

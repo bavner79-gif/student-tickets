@@ -18,7 +18,7 @@
   .tbl{background:#fff;border-radius:12px;overflow:auto;box-shadow:0 1px 2px rgba(0,0,0,.05)}
   table{border-collapse:collapse;width:100%;font-size:14px} th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
   th{background:#f8f9fc;font-weight:600;color:var(--muted)}
-  .st{font-weight:600} .done{color:var(--ok)} .open{color:var(--warn)} .none{color:var(--no)}
+  .st{font-weight:600} .done{color:var(--ok)} .part{color:var(--warn)} .open{color:var(--warn)} .none{color:var(--no)}
 </style>
 </head>
 <body>
@@ -27,7 +27,7 @@
   <div class="kpis" id="k"></div>
   <div class="bar">
     <a class="primary" href="/admin/export.csv">הורדת כל הפרטים (Excel)</a>
-    <select id="flt"><option value="">כל הסטטוסים</option><option value="done">הושלם</option><option value="open">נפתח, לא הושלם</option><option value="none">לא נפתח</option></select>
+    <select id="flt"><option value="">כל הסטטוסים</option><option value="done">הושלם</option><option value="part">נשמר חלקית</option><option value="open">נפתח, לא הושלם</option><option value="none">לא נפתח</option></select>
     <input id="q" placeholder="חיפוש שם">
   </div>
   <div class="tbl"><table><thead><tr><th>שם</th><th>סיבה</th><th>מקומות</th><th>סטטוס</th><th>נפתח</th><th>הושלם</th><th>מגיע/ה</th></tr></thead><tbody id="b"></tbody></table></div>
@@ -36,8 +36,8 @@
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const f = d => d ? new Date(d).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
 let all = [];
-const stOf = x => x.done ? 'done' : x.opened ? 'open' : 'none';
-const label = { done: 'הושלם', open: 'נפתח, לא הושלם', none: 'לא נפתח' };
+const stOf = x => x.done ? (x.missing ? 'part' : 'done') : x.opened ? 'open' : 'none';
+const label = { done: 'הושלם', part: 'נשמר חלקית', open: 'נפתח, לא הושלם', none: 'לא נפתח' };
 function draw() {
   const fl = document.getElementById('flt').value, q = document.getElementById('q').value.trim();
   const rows = all.filter(x => (!fl || stOf(x) === fl) && (!q || x.name.includes(q)));
@@ -49,8 +49,8 @@ async function load() {
   all = d.list;
   document.getElementById('dl').textContent = 'מועד אחרון: ' + f(d.deadline);
   const n = s => all.filter(x => stOf(x) === s).length;
-  const slots = all.reduce((a, x) => a + x.slots, 0), slotsDone = all.filter(x => x.done).reduce((a, x) => a + x.slots, 0);
-  document.getElementById('k').innerHTML = [['קישורים', all.length], ['הושלמו', n('done')], ['נפתחו ולא הושלמו', n('open')], ['לא נפתחו', n('none')], ['אורחים/חברים שהושלמו', `${slotsDone} / ${slots}`]]
+  const slots = all.reduce((a, x) => a + x.slots, 0), slotsDone = all.filter(x => x.done).reduce((a, x) => a + x.slots - x.missing, 0);
+  document.getElementById('k').innerHTML = [['קישורים', all.length], ['הושלמו', n('done')], ['נפתחו ולא הושלמו', n('open')], ['נשמרו חלקית', n('part')], ['לא נפתחו', n('none')], ['אורחים/חברים שהושלמו', `${slotsDone} / ${slots}`]]
     .map(([t, v]) => `<div class="kpi"><b>${v}</b><span>${t}</span></div>`).join('');
   draw();
 }
